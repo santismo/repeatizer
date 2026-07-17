@@ -112,6 +112,22 @@ public final class RepeatizerAudioUnit: AUAudioUnit, @unchecked Sendable {
             straightDivision: configuration.tapLiveStraightDivision.rawValue,
             tripletDivision: configuration.tapLiveTripletDivision.rawValue
         )
+        kernel.configureInstrumentEnabled(
+            configuration.performanceSurface == .instrument,
+            playbackMode: configuration.instrumentSettings.playbackMode.kernelValue,
+            octaveRange: configuration.instrumentSettings.octaveRange,
+            style: configuration.instrumentSettings.style.kernelValue,
+            patternVariant: configuration.instrumentSettings.patternVariant,
+            variation: configuration.instrumentSettings.variation,
+            livePatternEnabled: configuration.instrumentSettings.livePatternEnabled,
+            livePatternPhraseLength: configuration.instrumentSettings.livePatternPhraseLength,
+            patternAutoFill: configuration.instrumentSettings.patternAutoFill,
+            patternFluctuation: configuration.instrumentSettings.patternFluctuation,
+            patternProbability: configuration.instrumentSettings.patternProbability,
+            patternComplexity: configuration.instrumentSettings.patternComplexity,
+            arpGate: configuration.instrumentSettings.arpGate,
+            seed: configuration.instrumentSettings.seed
+        )
         let retainedDivisionActions: [MomentaryCCAction] = [
             .straightUp1, .straightDown1, .tripletUp1, .tripletDown1
         ]
@@ -125,7 +141,9 @@ public final class RepeatizerAudioUnit: AUAudioUnit, @unchecked Sendable {
         }
 
         let notes: [Int]
-        if firstApply || previous.settingsMode != configuration.settingsMode || configuration.settingsMode == .master && previous.masterSettings != configuration.masterSettings {
+        if firstApply || previous.performanceSurface != configuration.performanceSurface
+            || previous.settingsMode != configuration.settingsMode
+            || configuration.settingsMode == .master && previous.masterSettings != configuration.masterSettings {
             notes = Array(0...127)
         } else {
             notes = Array(Set(previous.pads.keys).union(configuration.pads.keys)).filter {

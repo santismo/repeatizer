@@ -8,8 +8,8 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
-    <key>CFBundleShortVersionString</key><string>1.10.1</string>
-    <key>CFBundleVersion</key><string>19</string>
+    <key>CFBundleShortVersionString</key><string>1.14.0</string>
+    <key>CFBundleVersion</key><string>23</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSExtension</key>
     <dict>
@@ -25,7 +25,7 @@
                 <key>subtype</key><string>Rptz</string>
                 <key>tags</key><array><string>Effects</string><string>MIDI</string></array>
                 <key>type</key><string>aumi</string>
-                <key>version</key><integer>68097</integer>
+                <key>version</key><integer>69120</integer>
             </dict></array>
         </dict>
         <key>NSExtensionPointIdentifier</key><string>com.apple.AudioUnit-UI</string>
