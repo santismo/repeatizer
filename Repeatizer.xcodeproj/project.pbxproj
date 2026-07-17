@@ -1,0 +1,114 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* RepeatizerHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* RepeatizerHostApp.swift */; };
+		A10000000000000000000002 /* RepeatizerCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* RepeatizerCore.swift */; };
+		A10000000000000000000003 /* RepeatizerAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* RepeatizerAudioUnit.swift */; };
+		A10000000000000000000004 /* RepeatizerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* RepeatizerViewController.swift */; };
+		A10000000000000000000005 /* RepeatizerPluginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* RepeatizerPluginView.swift */; };
+		A10000000000000000000006 /* RepeatizerExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* RepeatizerExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000007 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* AVFoundation.framework */; };
+		A10000000000000000000008 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* AudioToolbox.framework */; };
+		A10000000000000000000009 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* CoreAudioKit.framework */; };
+		A1000000000000000000000A /* RepeatizerKernelBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* RepeatizerKernelBridge.mm */; };
+		A1000000000000000000000B /* DrumPatternLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* DrumPatternLibrary.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A30000000000000000000001 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = A40000000000000000000001 /* Project object */; proxyType = 1; remoteGlobalIDString = A50000000000000000000002; remoteInfo = RepeatizerExtension; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A60000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (A10000000000000000000006 /* RepeatizerExtension.appex in Embed App Extensions */, );
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* RepeatizerHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatizerHostApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* RepeatizerCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/RepeatizerCore/RepeatizerCore.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* RepeatizerAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatizerAudioUnit.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* RepeatizerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatizerViewController.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* RepeatizerPluginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/RepeatizerPluginView.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* RepeatizerExtension.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = RepeatizerExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000007 /* Repeatizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Repeatizer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000008 /* Host Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000009 /* Extension Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
+		A2000000000000000000000A /* Repeatizer-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Repeatizer-Bridging-Header.h"; sourceTree = "<group>"; };
+		A2000000000000000000000B /* RepeatizerKernel.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = RepeatizerKernel.hpp; sourceTree = "<group>"; };
+		A2000000000000000000000C /* RepeatizerAUProcessHelper.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = RepeatizerAUProcessHelper.hpp; sourceTree = "<group>"; };
+		A2000000000000000000000D /* RepeatizerParameterAddresses.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RepeatizerParameterAddresses.h; sourceTree = "<group>"; };
+		A2000000000000000000000E /* RepeatizerKernelBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = RepeatizerKernelBridge.mm; sourceTree = "<group>"; };
+		A2000000000000000000000F /* RepeatizerKernelBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RepeatizerKernelBridge.h; sourceTree = "<group>"; };
+		A20000000000000000000010 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		A20000000000000000000011 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
+		A20000000000000000000012 /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
+		A20000000000000000000013 /* DrumPatternLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/RepeatizerCore/DrumPatternLibrary.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A60000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000003 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000007 /* AVFoundation.framework in Frameworks */, A10000000000000000000008 /* AudioToolbox.framework in Frameworks */, A10000000000000000000009 /* CoreAudioKit.framework in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A70000000000000000000001 = {isa = PBXGroup; children = (A70000000000000000000002 /* RepeatizerHost */, A70000000000000000000003 /* AUv3Extension */, A70000000000000000000007 /* Shared Core */, A70000000000000000000004 /* Frameworks */, A70000000000000000000005 /* Products */, ); sourceTree = "<group>"; };
+		A70000000000000000000002 /* RepeatizerHost */ = {isa = PBXGroup; children = (A20000000000000000000001 /* RepeatizerHostApp.swift */, A20000000000000000000008 /* Host Info.plist */, ); path = RepeatizerHost; sourceTree = "<group>"; };
+		A70000000000000000000003 /* AUv3Extension */ = {isa = PBXGroup; children = (A20000000000000000000003 /* RepeatizerAudioUnit.swift */, A20000000000000000000004 /* RepeatizerViewController.swift */, A20000000000000000000005 /* RepeatizerPluginView.swift */, A2000000000000000000000A /* Repeatizer-Bridging-Header.h */, A70000000000000000000006 /* Engine */, A20000000000000000000009 /* Extension Info.plist */, ); path = AUv3Extension; sourceTree = "<group>"; };
+		A70000000000000000000004 /* Frameworks */ = {isa = PBXGroup; children = (A20000000000000000000010 /* AVFoundation.framework */, A20000000000000000000011 /* AudioToolbox.framework */, A20000000000000000000012 /* CoreAudioKit.framework */, ); name = Frameworks; sourceTree = "<group>"; };
+		A70000000000000000000005 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000007 /* Repeatizer.app */, A20000000000000000000006 /* RepeatizerExtension.appex */, ); name = Products; sourceTree = "<group>"; };
+		A70000000000000000000006 /* Engine */ = {isa = PBXGroup; children = (A2000000000000000000000B /* RepeatizerKernel.hpp */, A2000000000000000000000C /* RepeatizerAUProcessHelper.hpp */, A2000000000000000000000D /* RepeatizerParameterAddresses.h */, A2000000000000000000000E /* RepeatizerKernelBridge.mm */, A2000000000000000000000F /* RepeatizerKernelBridge.h */, ); path = Engine; sourceTree = "<group>"; };
+		A70000000000000000000007 /* Shared Core */ = {isa = PBXGroup; children = (A20000000000000000000002 /* RepeatizerCore.swift */, A20000000000000000000013 /* DrumPatternLibrary.swift */, ); name = "Shared Core"; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* Repeatizer */ = {isa = PBXNativeTarget; buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "Repeatizer" */; buildPhases = (A60000000000000000000004 /* Sources */, A60000000000000000000002 /* Frameworks */, A60000000000000000000005 /* Resources */, A60000000000000000000001 /* Embed App Extensions */, ); buildRules = (); dependencies = (A90000000000000000000001 /* PBXTargetDependency */, ); name = Repeatizer; productName = Repeatizer; productReference = A20000000000000000000007 /* Repeatizer.app */; productType = "com.apple.product-type.application"; };
+		A50000000000000000000002 /* RepeatizerExtension */ = {isa = PBXNativeTarget; buildConfigurationList = A80000000000000000000003 /* Build configuration list for PBXNativeTarget "RepeatizerExtension" */; buildPhases = (A60000000000000000000006 /* Sources */, A60000000000000000000003 /* Frameworks */, A60000000000000000000007 /* Resources */, ); buildRules = (); dependencies = (); name = RepeatizerExtension; productName = RepeatizerExtension; productReference = A20000000000000000000006 /* RepeatizerExtension.appex */; productType = "com.apple.product-type.app-extension"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A40000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1630; LastUpgradeCheck = 1630; TargetAttributes = { A50000000000000000000002 = {CreatedOnToolsVersion = 16.3;}; }; }; buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXProject "Repeatizer" */; compatibilityVersion = "Xcode 15.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, ); mainGroup = A70000000000000000000001; productRefGroup = A70000000000000000000005 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A50000000000000000000001 /* Repeatizer */, A50000000000000000000002 /* RepeatizerExtension */, ); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000005 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000007 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000004 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* RepeatizerHostApp.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002 /* RepeatizerCore.swift in Sources */, A1000000000000000000000B /* DrumPatternLibrary.swift in Sources */, A10000000000000000000003 /* RepeatizerAudioUnit.swift in Sources */, A10000000000000000000004 /* RepeatizerViewController.swift in Sources */, A10000000000000000000005 /* RepeatizerPluginView.swift in Sources */, A1000000000000000000000A /* RepeatizerKernelBridge.mm in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A90000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A50000000000000000000002 /* RepeatizerExtension */; targetProxy = A30000000000000000000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SWIFT_VERSION = 6.0; }; name = Debug; };
+		AA0000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_VERSION = 6.0; }; name = Release; };
+		AA0000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = RepeatizerHost/RepeatizerHost.entitlements; CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 19; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = RepeatizerHost/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MARKETING_VERSION = 1.10.1; PRODUCT_BUNDLE_IDENTIFIER = com.repeatizer.app; PRODUCT_NAME = Repeatizer; SDKROOT = macosx; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Debug; };
+		AA0000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = RepeatizerHost/RepeatizerHost.entitlements; CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 19; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = RepeatizerHost/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MARKETING_VERSION = 1.10.1; PRODUCT_BUNDLE_IDENTIFIER = com.repeatizer.app; PRODUCT_NAME = Repeatizer; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Release; };
+		AA0000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = AUv3Extension/RepeatizerExtension.entitlements; CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 19; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AUv3Extension/Resources/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks"; MARKETING_VERSION = 1.10.1; OTHER_SWIFT_FLAGS = "-cxx-interoperability-mode=default"; PRODUCT_BUNDLE_IDENTIFIER = com.repeatizer.app.RepeatizerExtension; PRODUCT_NAME = RepeatizerExtension; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/AUv3Extension/Repeatizer-Bridging-Header.h"; SWIFT_OBJC_INTEROP_MODE = objcxx; }; name = Debug; };
+		AA0000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = AUv3Extension/RepeatizerExtension.entitlements; CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 19; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AUv3Extension/Resources/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks"; MARKETING_VERSION = 1.10.1; OTHER_SWIFT_FLAGS = "-cxx-interoperability-mode=default"; PRODUCT_BUNDLE_IDENTIFIER = com.repeatizer.app.RepeatizerExtension; PRODUCT_NAME = RepeatizerExtension; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/AUv3Extension/Repeatizer-Bridging-Header.h"; SWIFT_OBJC_INTEROP_MODE = objcxx; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000000000000000000001 /* Build configuration list for PBXProject "Repeatizer" */ = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000001 /* Debug */, AA0000000000000000000002 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000002 /* Build configuration list for PBXNativeTarget "Repeatizer" */ = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000003 /* Debug */, AA0000000000000000000004 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000003 /* Build configuration list for PBXNativeTarget "RepeatizerExtension" */ = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000005 /* Debug */, AA0000000000000000000006 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A40000000000000000000001 /* Project object */;
+}

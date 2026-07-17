@@ -1,0 +1,21 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode and local build products
+build/
+build-*/
+DerivedData/
+*.xcresult/
+*.xcarchive/
+*.app/
+*.appex/
+*.dSYM/
+*.xcuserstate
+xcuserdata/
+
+# Local probes and scratch material
+work/
+
+# macOS metadata
+.DS_Store
