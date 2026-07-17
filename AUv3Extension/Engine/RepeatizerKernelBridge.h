@@ -86,6 +86,20 @@ divisionProbabilityBias:(double)divisionProbabilityBias
              probability:(double)probability
               complexity:(double)complexity
                     seed:(NSInteger)seed;
+- (void)configureInstrumentEnabled:(BOOL)enabled
+                       playbackMode:(NSInteger)playbackMode
+                        octaveRange:(NSInteger)octaveRange
+                               style:(NSInteger)style
+                      patternVariant:(NSInteger)patternVariant
+                           variation:(double)variation
+              livePatternEnabled:(BOOL)livePatternEnabled
+         livePatternPhraseLength:(NSInteger)livePatternPhraseLength
+                 patternAutoFill:(double)patternAutoFill
+              patternFluctuation:(double)patternFluctuation
+              patternProbability:(double)patternProbability
+               patternComplexity:(double)patternComplexity
+                         arpGate:(double)arpGate
+                                seed:(NSInteger)seed;
 - (void)configureCustomLFO:(NSInteger)note lane:(NSInteger)lane points:(NSArray<NSNumber *> *)points;
 - (void)configureCCMapping:(NSInteger)destination enabled:(BOOL)enabled cc:(NSInteger)cc;
 - (void)setCaptureShortTaps:(BOOL)enabled;

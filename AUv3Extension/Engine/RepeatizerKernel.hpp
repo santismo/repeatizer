@@ -90,6 +90,7 @@ public:
     void initialize(double sampleRate) { mSampleRate = std::max(1.0, sampleRate); }
     void deInitialize() {
         mHeld.fill({});
+        mInstrumentSequence = {};
         for (auto& noteDown : mNoteDown) { noteDown.store(false, std::memory_order_relaxed); }
         mPendingOffCount = 0;
         mManualOriginSample.store(-1, std::memory_order_relaxed);
@@ -241,6 +242,31 @@ public:
         mPatternSeed[note] = seed;
     }
 
+    /// Instrument mode is a global master lane. It reads the currently held
+    /// MIDI chord on the render thread and voices it as a chord or arpeggio.
+    void configureInstrument(bool enabled, int playbackMode, int octaveRange,
+                             int style, int patternVariant, double variation,
+                             bool livePatternEnabled, int livePatternPhraseLength,
+                             double patternAutoFill, double patternFluctuation,
+                             double patternProbability, double patternComplexity,
+                             double arpGate, int seed) {
+        mInstrumentEnabled = enabled;
+        mInstrumentPlaybackMode = std::clamp(playbackMode, 0, 4);
+        mInstrumentOctaveRange = std::clamp(octaveRange, -2, 2);
+        mInstrumentStyle = std::clamp(style, 0, 43);
+        mInstrumentPatternVariant = std::clamp(patternVariant, 0, 7);
+        mInstrumentVariationThousandths = int(std::round(std::clamp(variation, 0.0, 1.0) * 1000.0));
+        mInstrumentLivePatternEnabled = livePatternEnabled;
+        mInstrumentLivePatternPhraseLength = std::clamp(livePatternPhraseLength, 1, 8);
+        mInstrumentPatternAutoFillThousandths = int(std::round(std::clamp(patternAutoFill, 0.0, 1.0) * 1000.0));
+        mInstrumentPatternFluctuationThousandths = int(std::round(std::clamp(patternFluctuation, 0.0, 1.0) * 1000.0));
+        mInstrumentPatternProbabilityThousandths = int(std::round(std::clamp(patternProbability, 0.0, 1.0) * 1000.0));
+        mInstrumentPatternComplexityThousandths = int(std::round(std::clamp(patternComplexity, 0.0, 1.0) * 1000.0));
+        mInstrumentArpGateThousandths = int(std::round(std::clamp(arpGate, 0.05, 1.0) * 1000.0));
+        mInstrumentSeed = std::max(1, seed);
+        mInstrumentConfigurationChanged.store(true, std::memory_order_relaxed);
+    }
+
     void configureCCMapping(int destination, bool enabled, int cc) {
         if (destination < 0 || destination >= kCCDestinationCount) { return; }
         mCCMappingEnabled[destination] = enabled;
@@ -313,8 +339,18 @@ public:
                     held.isSwungSide = grid.isSwungSide;
                 }
             }
+            mInstrumentSequence.active = false;
         }
         queueDueOffs(clock);
+
+        if (mInstrumentEnabled.load(std::memory_order_relaxed)) {
+            processInstrument(clock);
+            // The first instrument event of a render block may also finish
+            // inside it, so drain freshly created division-length gates.
+            queueDueOffs(clock);
+            flushQueue(clock);
+            return;
+        }
 
         for (int note = 0; note < kNoteCount; ++note) {
             auto& held = mHeld[note];
@@ -324,7 +360,10 @@ public:
                 queueEvent(true, note, held.channel, held.velocity, held.liveTapBeat, clock);
                 held.liveTapPending = false;
                 if (held.stopAfterLiveTap) {
-                    addPendingOff(note, held.channel, held.liveTapBeat + 0.03);
+                    const auto settings = resolve(note, held.liveTapBeat, held.repeatIndex, clock.bpm);
+                    const double requestedGate = noteGateBeats(settings, note, held.gesture >= 0, held.gesture, held.repeatIndex);
+                    const double pauseUntilRepeats = std::max(0.000001, held.earliestRepeatBeat - held.liveTapBeat);
+                    addPendingOff(note, held.channel, held.liveTapBeat + std::min(requestedGate, pauseUntilRepeats));
                     held.isHeld = false;
                     continue;
                 }
@@ -341,7 +380,10 @@ public:
                     if (held.gesture >= 0) { velocity = gestureVelocity(held.gesture, velocity, held.repeatIndex); }
                     const double protectedBeat = std::max(outputBeat, held.earliestRepeatBeat);
                     queueEvent(true, note, held.channel, velocity, protectedBeat, clock);
-                    addPendingOff(note, held.channel, protectedBeat + 0.03);
+                    const double requestedGate = noteGateBeats(settings, note, held.gesture >= 0, held.gesture, held.repeatIndex);
+                    const double nextBeat = nextGeneratedBeat(held, settings, note, clock.bpm, isPattern);
+                    const double safeGate = std::min(requestedGate, std::max(0.000001, nextBeat - protectedBeat));
+                    addPendingOff(note, held.channel, protectedBeat + safeGate);
                 }
 
                 if (held.gesture >= 0) {
@@ -361,6 +403,9 @@ public:
                 if (held.releaseAfterFirst) { held.isHeld = false; break; }
             }
         }
+        // Generated full-length gates can end inside this same render block;
+        // queue those note-offs now rather than postponing them a buffer.
+        queueDueOffs(clock);
         flushQueue(clock);
     }
 
@@ -396,6 +441,8 @@ private:
     };
     struct PendingOff { int note = 0; int channel = 0; double beat = 0; };
     struct QueuedEvent { bool on = false; int note = 0; int channel = 0; int velocity = 0; double beat = 0; };
+    struct InstrumentSequence { bool active = false; double nextBeat = 0; int step = 0; uint64_t randomEpoch = 0; };
+    struct InstrumentVoice { int note = 0; int channel = 0; int velocity = 0; };
     struct Clock { AUEventSampleTime startSample = 0; double startBeat = 0; double endBeat = 0; double beatsPerFrame = 0; double bpm = 120; bool sourceChanged = false; };
     struct GridPoint { double beat = 0; bool isSwungSide = false; };
     struct PatternPoint { double beat = 0; int64_t globalStep = 0; bool valid = false; };
@@ -962,6 +1009,229 @@ private:
         }
     }
 
+    double noteGateBeats(const ResolvedSettings& settings, int note, bool gestureActive, int gesture, int step) const {
+        if (gestureActive) { return std::max(0.000001, gestureInterval(gesture, step)); }
+        if (mPlaybackMode[note].load() == 1) {
+            return std::max(0.015625, double(mPatternStepMillionths[note].load()) / 1000000.0) * timeScale();
+        }
+        return std::max(0.000001, settings.divisionBeats);
+    }
+
+    double nextGeneratedBeat(const Held& held, const ResolvedSettings& settings, int note, double bpm, bool isPattern) const {
+        if (held.gesture >= 0) { return held.nextBeat + gestureInterval(held.gesture, held.repeatIndex); }
+        if (isPattern) {
+            const auto point = nextPatternPoint(note, held.nextBeat + 0.000001, held.repeatIndex + 1, bpm);
+            if (!point.valid) { return std::numeric_limits<double>::infinity(); }
+            const auto nextSettings = resolve(note, point.beat, held.repeatIndex + 1, bpm);
+            return std::max(
+                timingHumanizedBeat(point.beat, nextSettings, note, held.repeatIndex + 1, bpm, true),
+                held.earliestRepeatBeat
+            );
+        }
+        const auto grid = nextGridPoint(settings, held.nextBeat + 0.000001, note, held.repeatIndex + 1);
+        return std::max(
+            timingHumanizedBeat(grid.beat, settings, note, held.repeatIndex + 1, bpm, false),
+            held.earliestRepeatBeat
+        );
+    }
+
+    void processInstrument(const Clock& clock) {
+        if (mInstrumentConfigurationChanged.exchange(false, std::memory_order_relaxed)) {
+            mInstrumentSequence.active = false;
+        }
+        int anchorNote = -1;
+        for (int note = 0; note < kNoteCount; ++note) {
+            if (mNoteDown[note].load(std::memory_order_relaxed)) {
+                anchorNote = note;
+                break;
+            }
+        }
+        if (anchorNote < 0) {
+            mInstrumentSequence.active = false;
+            return;
+        }
+
+        if (!mInstrumentSequence.active) {
+            const auto settings = resolve(anchorNote, clock.startBeat, 0, clock.bpm);
+            const auto grid = nextGridPoint(settings, clock.startBeat, anchorNote, 0);
+            mInstrumentSequence = InstrumentSequence { true, grid.beat, 0, ++mInstrumentSequenceNonce };
+        }
+
+        while (mInstrumentSequence.nextBeat <= clock.endBeat + 0.0000001) {
+            const auto settings = resolve(anchorNote, mInstrumentSequence.nextBeat, mInstrumentSequence.step, clock.bpm);
+            const auto nextGrid = nextGridPoint(
+                settings, mInstrumentSequence.nextBeat + 0.000001, anchorNote, mInstrumentSequence.step + 1
+            );
+
+            const int playbackMode = mInstrumentPlaybackMode.load(std::memory_order_relaxed);
+            // Genre rhythms are a chord-play feature. Arpeggiators remain
+            // continuous so every selected voice gets its turn.
+            const bool shouldPlay = playbackMode != 0
+                || instrumentStyleFires(mInstrumentSequence.step, mInstrumentSequence.randomEpoch);
+            if (shouldPlay) {
+                std::array<InstrumentVoice, kNoteCount * 5> voices {};
+                const int voiceCount = collectInstrumentVoices(voices);
+                if (voiceCount > 0) {
+                    const double requestedGate = playbackMode == 0
+                        ? settings.divisionBeats
+                        : settings.divisionBeats * double(mInstrumentArpGateThousandths.load(std::memory_order_relaxed)) / 1000.0;
+                    const double gate = std::min(
+                        std::max(0.000001, requestedGate),
+                        std::max(0.000001, nextGrid.beat - mInstrumentSequence.nextBeat)
+                    );
+                    const double outputBeat = timingHumanizedBeat(
+                        mInstrumentSequence.nextBeat, settings, anchorNote, mInstrumentSequence.step, clock.bpm, false
+                    );
+                    auto play = [&](const InstrumentVoice& voice) {
+                        const int velocity = velocityFor(settings, voice.velocity, voice.note, mInstrumentSequence.step);
+                        queueEvent(true, voice.note, voice.channel, velocity, outputBeat, clock);
+                        addPendingOff(voice.note, voice.channel, outputBeat + gate);
+                    };
+
+                    if (playbackMode == 0) {
+                        for (int index = 0; index < voiceCount; ++index) { play(voices[index]); }
+                    } else {
+                        int index = 0;
+                        switch (playbackMode) {
+                        case 1: index = mInstrumentSequence.step % voiceCount; break;
+                        case 2: index = voiceCount - 1 - (mInstrumentSequence.step % voiceCount); break;
+                        case 3: {
+                            const int cycleLength = std::max(1, voiceCount * 2 - 2);
+                            const int cycleIndex = mInstrumentSequence.step % cycleLength;
+                            index = cycleIndex < voiceCount ? cycleIndex : cycleLength - cycleIndex;
+                            break;
+                        }
+                        default: index = instrumentRandomArpeggioIndex(
+                            voiceCount, mInstrumentSequence.step, mInstrumentSequence.randomEpoch
+                        ); break;
+                        }
+                        play(voices[std::clamp(index, 0, voiceCount - 1)]);
+                    }
+                }
+            }
+
+            mInstrumentSequence.nextBeat = nextGrid.beat;
+            ++mInstrumentSequence.step;
+        }
+    }
+
+    int collectInstrumentVoices(std::array<InstrumentVoice, kNoteCount * 5>& voices) const {
+        int count = 0;
+        const int octaves = mInstrumentOctaveRange.load(std::memory_order_relaxed);
+        const int firstOctave = std::min(0, octaves);
+        const int lastOctave = std::max(0, octaves);
+        for (int note = 0; note < kNoteCount; ++note) {
+            if (!mNoteDown[note].load(std::memory_order_relaxed)) { continue; }
+            const auto& held = mHeld[note];
+            for (int octave = firstOctave; octave <= lastOctave; ++octave) {
+                const int voicedNote = note + octave * 12;
+                if (voicedNote > 127 || count >= int(voices.size())) { continue; }
+                voices[count++] = InstrumentVoice { voicedNote, held.channel, held.velocity };
+            }
+        }
+        std::sort(voices.begin(), voices.begin() + count, [](const InstrumentVoice& a, const InstrumentVoice& b) {
+            return a.note < b.note;
+        });
+        return count;
+    }
+
+    bool instrumentStyleFires(int step, uint64_t randomEpoch) const {
+        const int phraseLength = std::max(1, mInstrumentLivePatternPhraseLength.load(std::memory_order_relaxed));
+        const int phrase = step / (16 * phraseLength);
+        const int liveOffset = mInstrumentLivePatternEnabled.load(std::memory_order_relaxed)
+            ? int(instrumentRandomUnit(phrase, 131, randomEpoch) * 7.0) + phrase
+            : 0;
+        const uint16_t mask = instrumentPatternMask(
+            mInstrumentStyle.load(std::memory_order_relaxed),
+            (mInstrumentPatternVariant.load(std::memory_order_relaxed) + liveOffset) % 8
+        );
+        const int index = positiveModulo(step, 16);
+        const bool baseHit = (mask & (uint16_t(1) << uint16_t(index))) != 0;
+        const double variation = double(mInstrumentVariationThousandths.load(std::memory_order_relaxed)) / 1000.0;
+        const uint16_t detailMask = instrumentPatternMask(
+            mInstrumentStyle.load(std::memory_order_relaxed),
+            (mInstrumentPatternVariant.load(std::memory_order_relaxed) + 2) % 8
+        );
+        const bool detailHit = (detailMask & (uint16_t(1) << uint16_t(index))) != 0;
+        bool hit = baseHit;
+        const double variationRandom = instrumentRandomUnit(step, 71, randomEpoch);
+        if (baseHit) { hit = variationRandom >= variation * 0.14; }
+        else if (variationRandom < variation * 0.38) { hit = true; }
+        const double complexity = double(mInstrumentPatternComplexityThousandths.load(std::memory_order_relaxed)) / 1000.0;
+        if (!hit && detailHit && instrumentRandomUnit(step, 79, randomEpoch) < complexity * 0.55) {
+            hit = true;
+        }
+        const double autoFill = double(mInstrumentPatternAutoFillThousandths.load(std::memory_order_relaxed)) / 1000.0;
+        if (!hit && index >= 14 && instrumentRandomUnit(step, 83, randomEpoch) < autoFill * 0.65) {
+            hit = true;
+        }
+        const double fluctuation = double(mInstrumentPatternFluctuationThousandths.load(std::memory_order_relaxed)) / 1000.0;
+        if (fluctuation > 0 && instrumentRandomUnit(step, 89, randomEpoch) < fluctuation * 0.22) {
+            hit = !hit;
+        }
+        if (!hit) { return false; }
+        const double probability = double(mInstrumentPatternProbabilityThousandths.load(std::memory_order_relaxed)) / 1000.0;
+        return instrumentRandomUnit(step, 97, randomEpoch) <= probability;
+    }
+
+    static uint16_t instrumentPatternMask(int style, int variant) {
+        static constexpr std::array<uint16_t, 44> bases {
+            0xFFFF, 0x8141, 0x5555, 0x1111, 0x94C9, 0x4211, 0xB54D, 0x8181,
+            0x5555, 0x8449, 0xA549, 0x6B59, 0x9149, 0xFFFF, 0xAC99, 0xFFFF,
+            0xD4B9, 0xB695, 0x4422, 0x8A51, 0x5555, 0x5155, 0xFFFF, 0x9999,
+            0x9B49, 0xFFFF, 0xEE99, 0xA529, 0xD659, 0xB6D9, 0x1111, 0x5555,
+            0xFFFF, 0x9695, 0xB529, 0xB6D9, 0x5251, 0xDD6D, 0x4449, 0xA549,
+            0x8888, 0xA451, 0xA249, 0x8081
+        };
+        const uint16_t base = bases[std::clamp(style, 0, int(bases.size()) - 1)];
+        const int amount = std::clamp(variant, 0, 7);
+        const auto rotate = [](uint16_t mask, int steps) {
+            const int shift = steps % 16;
+            if (shift == 0) { return mask; }
+            return uint16_t((uint32_t(mask) << shift) | (uint32_t(mask) >> (16 - shift)));
+        };
+        switch (amount) {
+        case 0: return base;
+        case 1: return rotate(base, 2);
+        case 2: return uint16_t(base | rotate(base, 1));
+        case 3: return uint16_t(base & 0x5555);
+        case 4: return uint16_t(rotate(base, 1) | 0x1111);
+        case 5: return uint16_t(base ^ rotate(base, 4));
+        case 6: return uint16_t(base | 0x8001);
+        default: return uint16_t(rotate(base, 8) ^ 0xAAAA);
+        }
+    }
+
+    int instrumentRandomArpeggioIndex(int voiceCount, int step, uint64_t randomEpoch) const {
+        if (voiceCount <= 1) { return 0; }
+        std::array<int, kNoteCount * 5> order {};
+        for (int index = 0; index < voiceCount; ++index) { order[index] = index; }
+        const int cycle = step / voiceCount;
+        const int position = step % voiceCount;
+        uint64_t state = uint64_t(uint32_t(mInstrumentSeed.load(std::memory_order_relaxed)));
+        state ^= randomEpoch * 1103515245ULL;
+        state ^= uint64_t(uint32_t(cycle)) * 2147483647ULL;
+        for (int index = voiceCount - 1; index > 0; --index) {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            const int swap = int(state % uint64_t(index + 1));
+            std::swap(order[index], order[swap]);
+        }
+        return order[position];
+    }
+
+    double instrumentRandomUnit(int step, int salt, uint64_t randomEpoch = 0) const {
+        uint64_t value = uint64_t(uint32_t(mInstrumentSeed.load(std::memory_order_relaxed)));
+        value ^= uint64_t(uint32_t(step * 48271));
+        value ^= uint64_t(uint32_t(salt * 6969));
+        value ^= randomEpoch * 1103515245ULL;
+        value ^= value >> 12;
+        value ^= value << 25;
+        value ^= value >> 27;
+        return double((value * 2685821657736338717ULL) >> 11) / double(uint64_t(1) << 53);
+    }
+
     int gestureVelocity(int gesture, int base, int step) const {
         const int length = std::max(1, mGestureLengthSteps.load());
         const double progress = double(step % length) / double(std::max(length - 1, 1));
@@ -1004,7 +1274,13 @@ private:
     }
 
     void flushQueue(const Clock& clock) {
-        std::sort(mQueued.begin(), mQueued.begin() + mQueuedCount, [](const QueuedEvent& a, const QueuedEvent& b) { return a.beat < b.beat; });
+        std::sort(mQueued.begin(), mQueued.begin() + mQueuedCount, [](const QueuedEvent& a, const QueuedEvent& b) {
+            if (a.beat != b.beat) { return a.beat < b.beat; }
+            // A division-length gate commonly ends exactly where the following
+            // repeat begins. Sending its off first prevents it from silencing
+            // that new note on the same MIDI pitch.
+            return !a.on && b.on;
+        });
         for (int i = 0; i < mQueuedCount; ++i) {
             const auto& event = mQueued[i];
             const auto delta = std::max(0.0, event.beat - clock.startBeat);
@@ -1049,6 +1325,7 @@ private:
 
     void beginHeld(AUEventSampleTime now, int note, int channel, int velocity) {
         if (note < 0 || note >= kNoteCount) { return; }
+        clearPendingOffs(note, channel);
         mNoteDown[note].store(true, std::memory_order_relaxed);
         mLastInputNote.store(note, std::memory_order_relaxed);
         mInputActivityCounter.fetch_add(1, std::memory_order_relaxed);
@@ -1094,7 +1371,18 @@ private:
         if (!mTapLive.load() && mCaptureShortTaps.load() && mPlaybackMode[note].load() == 0
             && held.repeatIndex == 0 && held.gesture < 0) { held.releaseAfterFirst = true; }
         else { held.isHeld = false; }
+        clearPendingOffs(note, channel);
         sendNoteOff(now, note, channel);
+    }
+
+    void clearPendingOffs(int note, int channel) {
+        int keep = 0;
+        for (int i = 0; i < mPendingOffCount; ++i) {
+            const auto off = mPendingOffs[i];
+            if (off.note == note && off.channel == channel) { continue; }
+            mPendingOffs[keep++] = off;
+        }
+        mPendingOffCount = keep;
     }
 
     void sendNoteOn(AUEventSampleTime sample, int note, int channel, int velocity) {
@@ -1159,6 +1447,15 @@ private:
     std::atomic<int> mTapLiveQuantizeMode { 0 };
     std::atomic<int> mTapLiveStraightDivision { 5 };
     std::atomic<int> mTapLiveTripletDivision { 6 };
+    std::atomic<bool> mInstrumentEnabled { false };
+    std::atomic<int> mInstrumentPlaybackMode { 0 }, mInstrumentOctaveRange { 0 }, mInstrumentStyle { 0 }, mInstrumentPatternVariant { 0 };
+    std::atomic<int> mInstrumentVariationThousandths { 0 }, mInstrumentSeed { 1 };
+    std::atomic<bool> mInstrumentLivePatternEnabled { false };
+    std::atomic<int> mInstrumentLivePatternPhraseLength { 1 };
+    std::atomic<int> mInstrumentPatternAutoFillThousandths { 0 }, mInstrumentPatternFluctuationThousandths { 0 };
+    std::atomic<int> mInstrumentPatternProbabilityThousandths { 1000 }, mInstrumentPatternComplexityThousandths { 0 };
+    std::atomic<int> mInstrumentArpGateThousandths { 850 };
+    std::atomic<bool> mInstrumentConfigurationChanged { true };
     std::atomic<bool> mTimingHumanizeEnabled { false };
     std::atomic<int> mTimingHumanizeMicroseconds { 8000 };
     std::atomic<int> mTimingHumanizeProbabilityThousandths { 1000 };
@@ -1188,6 +1485,8 @@ private:
     std::array<std::array<std::atomic<int>, kNoteCount>, 3> mModProbabilityBiasThousandths;
     std::array<std::array<std::array<std::atomic<int>, kCustomPointCount>, kNoteCount>, 3> mModCustomPointThousandths;
     std::array<Held, kNoteCount> mHeld {};
+    InstrumentSequence mInstrumentSequence {};
+    uint64_t mInstrumentSequenceNonce = 0;
     std::array<PendingOff, kMaxPendingOffs> mPendingOffs {};
     int mPendingOffCount = 0;
     std::array<QueuedEvent, kMaxQueuedEvents> mQueued {};

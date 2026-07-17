@@ -1,6 +1,6 @@
 # Repeatizer
 
-Repeatizer is a macOS AUv3 MIDI effect for Logic Pro. Hold a drum note to turn it into a rhythmic repeat lane, then shape its division, swing, velocity, fills, pattern behavior, and global clock.
+Repeatizer is a macOS AUv3 MIDI effect for Logic Pro. In **Drums** view, hold a drum note to turn it into a rhythmic repeat lane, then shape its division, swing, velocity, fills, pattern behavior, and global clock. In **Instrument** view, the held-note strip stays minimal while chord mode provides 44 genre styles with eight rhythm patterns each, live pattern changes, variation, complexity, fills, fluctuation, probability, Smart Play, and full velocity/timing humanize controls. Arp modes run continuously with up/down/up-down/random order, shuffled random passes, selectable gate length, and octave expansion up or down.
 
 ## Download and install
 

@@ -150,6 +150,172 @@ public enum SettingsMode: String, CaseIterable, Codable, Sendable {
     case individual = "Individual"
 }
 
+/// Chooses the performance-focused surface without changing the MIDI engine's
+/// routing. Instrument mode uses the existing master lane so every incoming
+/// pitch in a chord shares the same repeat rhythm.
+public enum PerformanceSurface: String, CaseIterable, Codable, Sendable, Identifiable {
+    case drums = "Drums"
+    case instrument = "Instrument"
+
+    public var id: String { rawValue }
+}
+
+public enum InstrumentPlaybackMode: String, CaseIterable, Codable, Sendable, Identifiable {
+    case chord = "Chord"
+    case arpeggioUp = "Arp Up"
+    case arpeggioDown = "Arp Down"
+    case arpeggioUpDown = "Arp Up/Down"
+    case arpeggioRandom = "Arp Random"
+
+    public var id: String { rawValue }
+
+    public var kernelValue: Int {
+        switch self {
+        case .chord: 0
+        case .arpeggioUp: 1
+        case .arpeggioDown: 2
+        case .arpeggioUpDown: 3
+        case .arpeggioRandom: 4
+        }
+    }
+}
+
+public enum InstrumentStyle: String, CaseIterable, Codable, Sendable, Identifiable {
+    case straight = "Straight"
+    case ballad = "Ballad"
+    case pop = "Pop"
+    case house = "House"
+    case trap = "Trap"
+    case ambient = "Ambient"
+    case latin = "Latin"
+    case cinematic = "Cinematic"
+    case foundation = "Foundation"
+    case boomBap = "Boom Bap"
+    case neoSoul = "Neo-Soul"
+    case funk = "Funk"
+    case jazz = "Jazz"
+    case techno = "Techno"
+    case drill = "Drill"
+    case drumAndBass = "Drum & Bass"
+    case breakbeat = "Breakbeat"
+    case afro = "Afro"
+    case reggae = "Reggae / Dub"
+    case experimental = "Experimental"
+    case rock = "Rock"
+    case indieRock = "Indie Rock"
+    case hardRock = "Hard Rock"
+    case punk = "Punk"
+    case progressiveRock = "Progressive Rock"
+    case metal = "Metal"
+    case progressiveMetal = "Progressive Metal"
+    case bebop = "Bebop"
+    case jazzFusion = "Jazz Fusion"
+    case latinJazz = "Latin Jazz"
+    case edm = "EDM"
+    case trance = "Trance"
+    case breakcore = "Breakcore"
+    case afrobeat = "Afrobeat"
+    case westAfrican = "West African"
+    case salsa = "Salsa"
+    case bossaNova = "Bossa Nova"
+    case samba = "Samba"
+    case blues = "Blues"
+    case gospel = "Gospel"
+    case classical = "Classical"
+    case baroque = "Baroque"
+    case romantic = "Romantic"
+    case minimalist = "Minimalist"
+
+    public var id: String { rawValue }
+
+    public var kernelValue: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+}
+
+/// The melodic performance lane is deliberately separate from drum patterns.
+/// Its rhythm controls shape chord playback only; arpeggiators use their own
+/// continuous note-order and gate controls.
+public struct InstrumentPerformanceSettings: Hashable, Codable, Sendable {
+    public var playbackMode: InstrumentPlaybackMode
+    public var style: InstrumentStyle
+    /// Eight related rhythm variations exist for every instrument style.
+    public var patternVariant: Int
+    /// Signed octave expansion. Negative values extend downward, positive
+    /// values extend upward, and zero leaves the held chord unstacked.
+    public var octaveRange: Int
+    /// Adds/removes deterministic detail from chord rhythm patterns.
+    public var variation: Double
+    /// Makes chord patterns move through related rhythm variants while held.
+    public var livePatternEnabled: Bool
+    /// Number of 16-step phrases before a live chord pattern changes.
+    public var livePatternPhraseLength: Int
+    /// Additional chord hits near phrase endings.
+    public var patternAutoFill: Double
+    /// Controlled reshuffling of chord-rhythm accents.
+    public var patternFluctuation: Double
+    /// Probability that an otherwise selected chord-pattern hit plays.
+    public var patternProbability: Double
+    /// Adds detail hits from the style's related variation mask.
+    public var patternComplexity: Double
+    /// Gate percentage for arpeggiator notes. Chord gates stay division-length.
+    public var arpGate: Double
+    public var seed: Int
+
+    public init(
+        playbackMode: InstrumentPlaybackMode = .chord,
+        style: InstrumentStyle = .straight,
+        patternVariant: Int = 0,
+        octaveRange: Int = 0,
+        variation: Double = 0,
+        livePatternEnabled: Bool = false,
+        livePatternPhraseLength: Int = 1,
+        patternAutoFill: Double = 0,
+        patternFluctuation: Double = 0,
+        patternProbability: Double = 1,
+        patternComplexity: Double = 0,
+        arpGate: Double = 0.85,
+        seed: Int = 1
+    ) {
+        self.playbackMode = playbackMode
+        self.style = style
+        self.patternVariant = min(max(patternVariant, 0), 7)
+        self.octaveRange = min(max(octaveRange, -2), 2)
+        self.variation = min(max(variation, 0), 1)
+        self.livePatternEnabled = livePatternEnabled
+        self.livePatternPhraseLength = [1, 2, 4, 8].contains(livePatternPhraseLength) ? livePatternPhraseLength : 1
+        self.patternAutoFill = min(max(patternAutoFill, 0), 1)
+        self.patternFluctuation = min(max(patternFluctuation, 0), 1)
+        self.patternProbability = min(max(patternProbability, 0), 1)
+        self.patternComplexity = min(max(patternComplexity, 0), 1)
+        self.arpGate = min(max(arpGate, 0.05), 1)
+        self.seed = max(1, seed)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case playbackMode, style, patternVariant, octaveRange, variation
+        case livePatternEnabled, livePatternPhraseLength
+        case patternAutoFill, patternFluctuation, patternProbability, patternComplexity
+        case arpGate, seed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        playbackMode = try values.decodeIfPresent(InstrumentPlaybackMode.self, forKey: .playbackMode) ?? .chord
+        style = try values.decodeIfPresent(InstrumentStyle.self, forKey: .style) ?? .straight
+        patternVariant = min(max(try values.decodeIfPresent(Int.self, forKey: .patternVariant) ?? 0, 0), 7)
+        octaveRange = min(max(try values.decodeIfPresent(Int.self, forKey: .octaveRange) ?? 0, -2), 2)
+        variation = min(max(try values.decodeIfPresent(Double.self, forKey: .variation) ?? 0, 0), 1)
+        livePatternEnabled = try values.decodeIfPresent(Bool.self, forKey: .livePatternEnabled) ?? false
+        let phraseLength = try values.decodeIfPresent(Int.self, forKey: .livePatternPhraseLength) ?? 1
+        livePatternPhraseLength = [1, 2, 4, 8].contains(phraseLength) ? phraseLength : 1
+        patternAutoFill = min(max(try values.decodeIfPresent(Double.self, forKey: .patternAutoFill) ?? 0, 0), 1)
+        patternFluctuation = min(max(try values.decodeIfPresent(Double.self, forKey: .patternFluctuation) ?? 0, 0), 1)
+        patternProbability = min(max(try values.decodeIfPresent(Double.self, forKey: .patternProbability) ?? 1, 0), 1)
+        patternComplexity = min(max(try values.decodeIfPresent(Double.self, forKey: .patternComplexity) ?? 0, 0), 1)
+        arpGate = min(max(try values.decodeIfPresent(Double.self, forKey: .arpGate) ?? 0.85, 0.05), 1)
+        seed = max(1, try values.decodeIfPresent(Int.self, forKey: .seed) ?? 1)
+    }
+}
+
 public enum DrumGestureKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case flam = "Flam"
     case diddle = "Diddle"
@@ -722,6 +888,8 @@ public struct LiveCCConfiguration: Hashable, Codable, Sendable {
 }
 
 public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
+    public var performanceSurface: PerformanceSurface
+    public var instrumentSettings: InstrumentPerformanceSettings
     public var tempoMode: TempoMode
     public var manualBPM: Double
     public var timeScale: GlobalTimeScale
@@ -745,6 +913,8 @@ public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
     public var liveCC: LiveCCConfiguration
 
     public init(
+        performanceSurface: PerformanceSurface = .drums,
+        instrumentSettings: InstrumentPerformanceSettings = .init(),
         tempoMode: TempoMode = .hostSync,
         manualBPM: Double = 120,
         timeScale: GlobalTimeScale = .normal,
@@ -767,6 +937,8 @@ public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
         followerNotes: Set<Int> = [],
         liveCC: LiveCCConfiguration = .init()
     ) {
+        self.performanceSurface = performanceSurface
+        self.instrumentSettings = instrumentSettings
         self.tempoMode = tempoMode
         self.manualBPM = manualBPM
         self.timeScale = timeScale
@@ -791,6 +963,7 @@ public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case performanceSurface, instrumentSettings
         case tempoMode, manualBPM, timeScale, timingHumanizeEnabled, timingHumanizeMilliseconds
         case timingHumanizeProbability, timingHumanizeBias
         case settingsMode, masterSettings, captureShortTaps, tapLive, tapLiveBuffer
@@ -800,6 +973,8 @@ public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        performanceSurface = try values.decodeIfPresent(PerformanceSurface.self, forKey: .performanceSurface) ?? .drums
+        instrumentSettings = try values.decodeIfPresent(InstrumentPerformanceSettings.self, forKey: .instrumentSettings) ?? .init()
         tempoMode = try values.decodeIfPresent(TempoMode.self, forKey: .tempoMode) ?? .hostSync
         manualBPM = try values.decodeIfPresent(Double.self, forKey: .manualBPM) ?? 120
         timeScale = try values.decodeIfPresent(GlobalTimeScale.self, forKey: .timeScale) ?? .normal
@@ -827,6 +1002,8 @@ public struct RepeatizerConfiguration: Hashable, Codable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(performanceSurface, forKey: .performanceSurface)
+        try values.encode(instrumentSettings, forKey: .instrumentSettings)
         try values.encode(tempoMode, forKey: .tempoMode)
         try values.encode(manualBPM, forKey: .manualBPM)
         try values.encode(timeScale, forKey: .timeScale)
@@ -1270,20 +1447,42 @@ public struct RepeatEngine: Sendable {
         var beat: Double
     }
 
+    private struct InstrumentInput: Sendable {
+        var velocity: Int
+        var channel: Int
+    }
+
+    private struct InstrumentSequence: Sendable {
+        var nextBeat: Double
+        var step: Int
+        var randomEpoch: Int
+    }
+
     public var configuration: RepeatizerConfiguration
     private var held: [Int: HeldNote] = [:]
     private var pendingOffs: [PendingOff] = []
     private var ccValues: [Int: Int] = [:]
+    private var instrumentInputs: [Int: InstrumentInput] = [:]
+    private var instrumentSequence: InstrumentSequence?
+    private var instrumentSequenceNonce = 0
 
     public init(configuration: RepeatizerConfiguration = .init()) {
         self.configuration = configuration
     }
 
     /// Processes all input events in the supplied musical range and returns the
-    /// generated MIDI. The fixed 0.03-beat note-off is intentionally internal;
-    /// there is no exposed gate/note-length feature in this first product scope.
+    /// generated MIDI. Generated note gates use the active repeat division (or
+    /// pattern step), so melodic instruments receive a musical note length
+    /// instead of the old fixed click-length MIDI pulse.
     public mutating func process(_ input: [MIDIInputEvent], from startBeat: Double, to endBeat: Double) -> [MIDIOutputEvent] {
         precondition(endBeat >= startBeat)
+        if configuration.performanceSurface == .instrument {
+            return processInstrument(input, from: startBeat, to: endBeat)
+        }
+        return processDrums(input, from: startBeat, to: endBeat)
+    }
+
+    private mutating func processDrums(_ input: [MIDIInputEvent], from startBeat: Double, to endBeat: Double) -> [MIDIOutputEvent] {
         var output: [MIDIOutputEvent] = []
         var cursor = startBeat
         for event in input.sorted(by: { $0.beat < $1.beat }) where event.beat <= endBeat {
@@ -1292,6 +1491,7 @@ public struct RepeatEngine: Sendable {
             cursor = clampedBeat
             switch event.kind {
             case .noteOn where event.velocity > 0:
+                clearPendingOffs(note: event.note, channel: event.channel)
                 start(note: event.note, velocity: event.velocity, channel: event.channel, at: clampedBeat)
                 if configuration.tapLive, configuration.tapLiveQuantizeMode == .free {
                     output.append(MIDIOutputEvent(
@@ -1320,6 +1520,7 @@ public struct RepeatEngine: Sendable {
                     held.removeValue(forKey: event.note)
                 }
                 if held[event.note]?.liveTapPending != true {
+                    clearPendingOffs(note: event.note, channel: event.channel)
                     output.append(MIDIOutputEvent(kind: .noteOff, note: event.note, velocity: 0, channel: event.channel, beat: clampedBeat))
                 }
             case .controlChange:
@@ -1329,6 +1530,282 @@ public struct RepeatEngine: Sendable {
         }
         output += render(until: endBeat)
         return output.sorted()
+    }
+
+    private mutating func clearPendingOffs(note: Int, channel: Int) {
+        pendingOffs.removeAll { $0.note == note && $0.channel == channel }
+    }
+
+    private mutating func processInstrument(_ input: [MIDIInputEvent], from startBeat: Double, to endBeat: Double) -> [MIDIOutputEvent] {
+        var output: [MIDIOutputEvent] = []
+        var cursor = startBeat
+        let events = input.sorted(by: { $0.beat < $1.beat }).filter { $0.beat <= endBeat }
+        var eventIndex = 0
+
+        while eventIndex < events.count {
+            let clampedBeat = max(cursor, events[eventIndex].beat)
+            output += renderInstrument(until: clampedBeat)
+            cursor = clampedBeat
+
+            repeat {
+                let event = events[eventIndex]
+                switch event.kind {
+                case .noteOn where event.velocity > 0:
+                    clearPendingOffs(note: event.note, channel: event.channel)
+                    instrumentInputs[event.note] = InstrumentInput(
+                        velocity: min(max(event.velocity, 1), 127),
+                        channel: min(max(event.channel, 0), 15)
+                    )
+                    if instrumentSequence == nil {
+                        let settings = configuration.masterSettings
+                        let grid = nextGridPoint(for: settings, atOrAfter: clampedBeat, eventIndex: 0, note: event.note)
+                        instrumentSequenceNonce &+= 1
+                        instrumentSequence = InstrumentSequence(
+                            nextBeat: grid.beat,
+                            step: 0,
+                            randomEpoch: max(1, instrumentSequenceNonce)
+                        )
+                    }
+                case .noteOn, .noteOff:
+                    let channel = instrumentInputs[event.note]?.channel ?? event.channel
+                    instrumentInputs.removeValue(forKey: event.note)
+                    clearPendingOffs(note: event.note, channel: channel)
+                    output.append(MIDIOutputEvent(kind: .noteOff, note: event.note, velocity: 0, channel: channel, beat: clampedBeat))
+                    if instrumentInputs.isEmpty { instrumentSequence = nil }
+                case .controlChange:
+                    ccValues[event.note] = min(max(event.velocity, 0), 127)
+                }
+                eventIndex += 1
+            } while eventIndex < events.count && abs(events[eventIndex].beat - clampedBeat) < 0.000_000_1
+        }
+
+        output += renderInstrument(until: endBeat)
+        return output.sorted()
+    }
+
+    private mutating func renderInstrument(until endBeat: Double) -> [MIDIOutputEvent] {
+        var output: [MIDIOutputEvent] = []
+        appendDueInstrumentOffs(until: endBeat, to: &output)
+
+        guard !instrumentInputs.isEmpty else {
+            instrumentSequence = nil
+            return output
+        }
+
+        let settings = configuration.masterSettings
+        if instrumentSequence == nil {
+            let anchor = instrumentInputs.keys.sorted().first ?? 60
+            let grid = nextGridPoint(for: settings, atOrAfter: endBeat, eventIndex: 0, note: anchor)
+            instrumentSequenceNonce &+= 1
+            instrumentSequence = InstrumentSequence(
+                nextBeat: grid.beat,
+                step: 0,
+                randomEpoch: max(1, instrumentSequenceNonce)
+            )
+        }
+
+        while var sequence = instrumentSequence, sequence.nextBeat <= endBeat + 0.000_000_1 {
+            let anchor = instrumentInputs.keys.sorted().first ?? 60
+            let playbackMode = configuration.instrumentSettings.playbackMode
+            // Chord mode owns Repeatizer's genre rhythm engine. Arpeggiators
+            // deliberately stay continuous so a rhythm mask never erases a
+            // note from their sequence.
+            let shouldPlay = playbackMode != .chord || instrumentStyleFires(
+                step: sequence.step,
+                randomEpoch: sequence.randomEpoch
+            )
+            if shouldPlay {
+                let nextGrid = nextGridPoint(
+                    for: settings,
+                    atOrAfter: sequence.nextBeat + 0.000_001,
+                    eventIndex: sequence.step + 1,
+                    note: anchor
+                )
+                let gate = min(
+                    instrumentGateBeats(for: settings, playbackMode: playbackMode),
+                    max(0.000_001, nextGrid.beat - sequence.nextBeat)
+                )
+                let outputBeat = timingHumanizedBeat(
+                    sequence.nextBeat,
+                    settings: settings,
+                    note: anchor,
+                    eventIndex: sequence.step
+                )
+                for voice in instrumentVoices(step: sequence.step, randomEpoch: sequence.randomEpoch) {
+                    let velocity = velocityFor(
+                        settings,
+                        source: voice.input.velocity,
+                        beat: outputBeat,
+                        eventIndex: sequence.step,
+                        note: voice.note
+                    )
+                    output.append(MIDIOutputEvent(
+                        kind: .noteOn,
+                        note: voice.note,
+                        velocity: velocity,
+                        channel: voice.input.channel,
+                        beat: outputBeat
+                    ))
+                    pendingOffs.append(PendingOff(note: voice.note, channel: voice.input.channel, beat: outputBeat + gate))
+                }
+            }
+
+            let grid = nextGridPoint(
+                for: settings,
+                atOrAfter: sequence.nextBeat + 0.000_001,
+                eventIndex: sequence.step + 1,
+                note: anchor
+            )
+            sequence.nextBeat = grid.beat
+            sequence.step += 1
+            instrumentSequence = sequence
+        }
+
+        appendDueInstrumentOffs(until: endBeat, to: &output)
+        return output
+    }
+
+    private mutating func appendDueInstrumentOffs(until endBeat: Double, to output: inout [MIDIOutputEvent]) {
+        let due = pendingOffs.enumerated().filter { $0.element.beat <= endBeat }
+        for item in due.reversed() {
+            let off = item.element
+            output.append(MIDIOutputEvent(kind: .noteOff, note: off.note, velocity: 0, channel: off.channel, beat: off.beat))
+            pendingOffs.remove(at: item.offset)
+        }
+    }
+
+    private func instrumentGateBeats(for settings: PadConfiguration, playbackMode: InstrumentPlaybackMode) -> Double {
+        let base = settings.division.beats * configuration.timeScale.intervalMultiplier
+        guard playbackMode != .chord else { return base }
+        return base * configuration.instrumentSettings.arpGate
+    }
+
+    private func instrumentVoices(step: Int, randomEpoch: Int) -> [(note: Int, input: InstrumentInput)] {
+        let octaves = configuration.instrumentSettings.octaveRange
+        var voices: [(note: Int, input: InstrumentInput)] = []
+        for note in instrumentInputs.keys.sorted() {
+            guard let input = instrumentInputs[note] else { continue }
+            let octaveOffsets = octaves >= 0 ? Array(0...octaves) : Array(octaves...0)
+            for octave in octaveOffsets {
+                let voicedNote = note + octave * 12
+                if (0...127).contains(voicedNote) { voices.append((voicedNote, input)) }
+            }
+        }
+        voices.sort { $0.note < $1.note }
+        guard !voices.isEmpty else { return [] }
+
+        switch configuration.instrumentSettings.playbackMode {
+        case .chord:
+            return voices
+        case .arpeggioUp:
+            return [voices[step % voices.count]]
+        case .arpeggioDown:
+            return [voices[(voices.count - 1) - (step % voices.count)]]
+        case .arpeggioUpDown:
+            guard voices.count > 1 else { return voices }
+            let cycle = voices + Array(voices.dropFirst().dropLast().reversed())
+            return [cycle[step % cycle.count]]
+        case .arpeggioRandom:
+            return [voices[instrumentRandomArpeggioIndex(
+                voiceCount: voices.count,
+                step: step,
+                randomEpoch: randomEpoch
+            )]]
+        }
+    }
+
+    private func instrumentStyleFires(step: Int, randomEpoch: Int) -> Bool {
+        let settings = configuration.instrumentSettings
+        let phrase = step / max(16, 16 * settings.livePatternPhraseLength)
+        let liveOffset = settings.livePatternEnabled
+            ? Int((instrumentRandomUnit(step: phrase, salt: 131, randomEpoch: randomEpoch) * 7).rounded(.down)) + phrase
+            : 0
+        let mask = instrumentPatternMask(
+            style: settings.style,
+            variant: (settings.patternVariant + liveOffset) % 8
+        )
+        let index = step % 16
+        let baseHit = mask & (UInt16(1) << UInt16(index)) != 0
+        let detailMask = instrumentPatternMask(style: settings.style, variant: (settings.patternVariant + 2) % 8)
+        let detailHit = detailMask & (UInt16(1) << UInt16(index)) != 0
+        var hit = baseHit
+        let variationRandom = instrumentRandomUnit(step: step, salt: 71, randomEpoch: randomEpoch)
+        if baseHit { hit = variationRandom >= settings.variation * 0.14 }
+        else if variationRandom < settings.variation * 0.38 { hit = true }
+        if !hit, detailHit,
+           instrumentRandomUnit(step: step, salt: 79, randomEpoch: randomEpoch) < settings.patternComplexity * 0.55 {
+            hit = true
+        }
+        if !hit, index >= 14,
+           instrumentRandomUnit(step: step, salt: 83, randomEpoch: randomEpoch) < settings.patternAutoFill * 0.65 {
+            hit = true
+        }
+        if settings.patternFluctuation > 0,
+           instrumentRandomUnit(step: step, salt: 89, randomEpoch: randomEpoch) < settings.patternFluctuation * 0.22 {
+            hit.toggle()
+        }
+        guard hit else { return false }
+        return instrumentRandomUnit(step: step, salt: 97, randomEpoch: randomEpoch) <= settings.patternProbability
+    }
+
+    private func instrumentPatternMask(style: InstrumentStyle, variant: Int) -> UInt16 {
+        // One rhythmic base pattern per genre, then eight musical variations
+        // per base. The genre library is purpose-built for chord rhythm;
+        // arpeggiators intentionally bypass it.
+        let bases: [UInt16] = [
+            0xFFFF, 0x8141, 0x5555, 0x1111, 0x94C9, 0x4211, 0xB54D, 0x8181,
+            0x5555, 0x8449, 0xA549, 0x6B59, 0x9149, 0xFFFF, 0xAC99, 0xFFFF,
+            0xD4B9, 0xB695, 0x4422, 0x8A51, 0x5555, 0x5155, 0xFFFF, 0x9999,
+            0x9B49, 0xFFFF, 0xEE99, 0xA529, 0xD659, 0xB6D9, 0x1111, 0x5555,
+            0xFFFF, 0x9695, 0xB529, 0xB6D9, 0x5251, 0xDD6D, 0x4449, 0xA549,
+            0x8888, 0xA451, 0xA249, 0x8081
+        ]
+        let base = bases[style.kernelValue % bases.count]
+        let amount = min(max(variant, 0), 7)
+        func rotate(_ mask: UInt16, _ steps: Int) -> UInt16 {
+            let shift = steps % 16
+            guard shift != 0 else { return mask }
+            return (mask << UInt16(shift)) | (mask >> UInt16(16 - shift))
+        }
+        switch amount {
+        case 0: return base
+        case 1: return rotate(base, 2)
+        case 2: return base | rotate(base, 1)
+        case 3: return base & 0x5555
+        case 4: return rotate(base, 1) | 0x1111
+        case 5: return base ^ rotate(base, 4)
+        case 6: return base | 0x8001
+        default: return rotate(base, 8) ^ 0xAAAA
+        }
+    }
+
+    private func instrumentRandomArpeggioIndex(voiceCount: Int, step: Int, randomEpoch: Int) -> Int {
+        guard voiceCount > 1 else { return 0 }
+        let cycle = step / voiceCount
+        let position = step % voiceCount
+        var order = Array(0..<voiceCount)
+        var state = UInt64(bitPattern: Int64(configuration.instrumentSettings.seed))
+        state ^= UInt64(bitPattern: Int64(randomEpoch &* 1_103_515_245))
+        state ^= UInt64(bitPattern: Int64(cycle &* 2_147_483_647))
+        for index in stride(from: voiceCount - 1, through: 1, by: -1) {
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
+            let swap = Int(state % UInt64(index + 1))
+            order.swapAt(index, swap)
+        }
+        return order[position]
+    }
+
+    private func instrumentRandomUnit(step: Int, salt: Int, randomEpoch: Int = 0) -> Double {
+        var value = UInt64(bitPattern: Int64(configuration.instrumentSettings.seed))
+        value ^= UInt64(bitPattern: Int64(step &* 48_271))
+        value ^= UInt64(bitPattern: Int64(salt &* 6_969))
+        value ^= UInt64(bitPattern: Int64(randomEpoch &* 1_103_515_245))
+        value ^= value >> 12
+        value ^= value << 25
+        value ^= value >> 27
+        return Double((value &* 2_685_821_657_736_338_717) >> 11) / Double(UInt64(1) << 53)
     }
 
     private mutating func start(note: Int, velocity: Int, channel: Int, at beat: Double) {
@@ -1410,7 +1887,14 @@ public struct RepeatEngine: Sendable {
                 ))
                 state.liveTapPending = false
                 if state.stopAfterLiveTap {
-                    pendingOffs.append(PendingOff(note: note, channel: state.channel, beat: state.liveTapBeat + 0.03))
+                    let settings = configuration.effectivePad(note)
+                    let requestedGate = noteGateBeats(for: settings, note: note)
+                    let pauseUntilRepeats = max(0.000_001, state.earliestRepeatBeat - state.liveTapBeat)
+                    pendingOffs.append(PendingOff(
+                        note: note,
+                        channel: state.channel,
+                        beat: state.liveTapBeat + min(requestedGate, pauseUntilRepeats)
+                    ))
                     held.removeValue(forKey: note)
                     continue
                 }
@@ -1430,7 +1914,15 @@ public struct RepeatEngine: Sendable {
                     let velocity = velocityFor(settings, source: state.velocity, beat: state.nextBeat, eventIndex: state.repeatIndex, note: note)
                     let protectedBeat = max(outputBeat, state.earliestRepeatBeat)
                     output.append(MIDIOutputEvent(kind: .noteOn, note: note, velocity: velocity, channel: state.channel, beat: protectedBeat))
-                    pendingOffs.append(PendingOff(note: note, channel: state.channel, beat: protectedBeat + 0.03))
+                    let requestedGate = noteGateBeats(for: settings, note: note)
+                    let nextBeat = nextGeneratedBeat(
+                        after: state,
+                        settings: settings,
+                        note: note,
+                        isPattern: isPattern
+                    )
+                    let safeGate = min(requestedGate, max(0.000_001, nextBeat - protectedBeat))
+                    pendingOffs.append(PendingOff(note: note, channel: state.channel, beat: protectedBeat + safeGate))
                 }
 
                 if isPattern {
@@ -1460,7 +1952,59 @@ public struct RepeatEngine: Sendable {
             if state.releaseAfterFirst, state.repeatIndex > 0 { held.removeValue(forKey: note) }
             else { held[note] = state }
         }
+        // A long render block can contain both a generated note-on and its
+        // division-length note-off. Drain once more so the off remains at its
+        // musical beat instead of being delayed to the following audio block.
+        let newlyDueOffs = pendingOffs.enumerated().filter { $0.element.beat <= endBeat }
+        for item in newlyDueOffs.reversed() {
+            let off = item.element
+            output.append(MIDIOutputEvent(kind: .noteOff, note: off.note, velocity: 0, channel: off.channel, beat: off.beat))
+            pendingOffs.remove(at: item.offset)
+        }
         return output
+    }
+
+    /// The musical gate requested by the selected division. Fill/swing timing
+    /// can place the following hit sooner, in which case `render` clips this to
+    /// that next hit so an older note-off can never cut off the newer note.
+    private func noteGateBeats(for settings: PadConfiguration, note: Int) -> Double {
+        if settings.playbackMode == .pattern {
+            return DrumPatternLibrary.pattern(settings.patternID).stepDivision.beats
+                * configuration.timeScale.intervalMultiplier
+        }
+        return resolvedDivision(settings, movement: 0).beats * configuration.timeScale.intervalMultiplier
+    }
+
+    private func nextGeneratedBeat(
+        after state: HeldNote,
+        settings: PadConfiguration,
+        note: Int,
+        isPattern: Bool
+    ) -> Double {
+        if isPattern {
+            let point = nextPatternPoint(
+                for: settings,
+                atOrAfter: state.nextBeat + 0.000_001,
+                eventIndex: state.repeatIndex + 1,
+                note: note
+            )
+            guard point.valid else { return .greatestFiniteMagnitude }
+            return max(
+                timingHumanizedBeat(point.beat, settings: settings, note: note, eventIndex: state.repeatIndex + 1),
+                state.earliestRepeatBeat
+            )
+        }
+
+        let grid = nextGridPoint(
+            for: settings,
+            atOrAfter: state.nextBeat + 0.000_001,
+            eventIndex: state.repeatIndex + 1,
+            note: note
+        )
+        return max(
+            timingHumanizedBeat(grid.beat, settings: settings, note: note, eventIndex: state.repeatIndex + 1),
+            state.earliestRepeatBeat
+        )
     }
 
     private func nextGridPoint(for settings: PadConfiguration, atOrAfter beat: Double, eventIndex: Int, note: Int) -> (beat: Double, isSwungSide: Bool) {

@@ -52,6 +52,12 @@
                               variation, autoFill, fluctuation, probability, complexity, int(seed));
 }
 
+- (void)configureInstrumentEnabled:(BOOL)enabled playbackMode:(NSInteger)playbackMode octaveRange:(NSInteger)octaveRange style:(NSInteger)style patternVariant:(NSInteger)patternVariant variation:(double)variation livePatternEnabled:(BOOL)livePatternEnabled livePatternPhraseLength:(NSInteger)livePatternPhraseLength patternAutoFill:(double)patternAutoFill patternFluctuation:(double)patternFluctuation patternProbability:(double)patternProbability patternComplexity:(double)patternComplexity arpGate:(double)arpGate seed:(NSInteger)seed {
+    _kernel->configureInstrument(enabled, int(playbackMode), int(octaveRange), int(style), int(patternVariant), variation,
+                                 livePatternEnabled, int(livePatternPhraseLength), patternAutoFill, patternFluctuation,
+                                 patternProbability, patternComplexity, arpGate, int(seed));
+}
+
 - (void)configureCustomLFO:(NSInteger)note lane:(NSInteger)lane points:(NSArray<NSNumber *> *)points {
     const NSInteger count = MIN(points.count, RepeatizerKernel::kCustomPointCount);
     for (NSInteger point = 0; point < count; ++point) {
