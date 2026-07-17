@@ -5,7 +5,7 @@ Repeatizer is a macOS AUv3 MIDI effect for Logic Pro. In **Drums** view, hold a 
 ## Download and install
 
 1. Quit Logic Pro completely.
-2. Download **`Repeatizer-1.10.1-macOS.zip`** from the [latest release](https://github.com/santismo/repeatizer/releases/latest).
+2. Download **`Repeatizer-1.14.0-macOS.zip`** from the [latest release](https://github.com/santismo/repeatizer/releases/latest).
 3. Unzip it and move **Repeatizer.app** into **Applications**, replacing an older Repeatizer app if macOS asks.
 4. Control-click **Repeatizer.app** and choose **Open** once. This registers the included Audio Unit with macOS.
 5. Open Logic Pro. In **Logic Pro > Settings > Plug-in Manager**, locate **Repeatizer: Repeatizer** and enable it if needed.
