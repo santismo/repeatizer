@@ -120,7 +120,9 @@ private final class RepeatizerPluginModel: ObservableObject {
     }
 
     func setManualBPM(_ bpm: Double) {
-        mutate(action: "manual-bpm") { $0.manualBPM = min(max(bpm, 30), 300) }
+        mutate(action: "manual-bpm") {
+            $0.manualBPM = min(max((bpm * 10).rounded() / 10, 30), 300)
+        }
     }
 
     func setTimeScale(_ scale: GlobalTimeScale) {
@@ -742,7 +744,7 @@ private struct ClockControls: View {
                 Slider(value: Binding(
                     get: { model.configuration.manualBPM },
                     set: { model.setManualBPM($0) }
-                ), in: 30...300, step: 0.1)
+                ), in: 30...300)
                     .tint(isManual ? theme.note : theme.muted)
                     .frame(width: 86)
 
@@ -1137,8 +1139,8 @@ private struct InstrumentBoard: View {
                         .foregroundStyle(theme.muted)
                     Slider(value: Binding(
                         get: { settings.swingPercent },
-                        set: { model.setInstrumentSwing($0) }
-                    ), in: 50...75, step: 1)
+                        set: { model.setInstrumentSwing($0.rounded()) }
+                    ), in: 50...75)
                     .frame(width: 115)
                 }
 
@@ -1422,12 +1424,26 @@ private struct InstrumentBoard: View {
     ) -> some View {
         HStack(spacing: 10) {
             Text(label).font(RTType.label(9)).foregroundStyle(theme.muted).frame(width: 122, alignment: .leading)
-            Slider(value: value, in: range, step: step).tint(theme.note)
+            Slider(value: steppedBinding(value, range: range, step: step), in: range).tint(theme.note)
             Text(text).font(RTType.label(9)).foregroundStyle(theme.note).frame(width: 70, alignment: .trailing)
         }
     }
 
     private func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+
+    private func steppedBinding(
+        _ value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: { value.wrappedValue },
+            set: { raw in
+                let quantized = (raw / step).rounded() * step
+                value.wrappedValue = min(max(quantized, range.lowerBound), range.upperBound)
+            }
+        )
+    }
 
     private func humanizeBiasLabel(_ bias: Double) -> String {
         if abs(bias) < 0.01 { return "CENTER" }
@@ -1814,8 +1830,8 @@ private struct PadSettingsPanel: View {
                 .font(RTType.label(10))
                 Slider(value: Binding(
                     get: { model.selectedPad.swingPercent },
-                    set: { value in model.updateSelected { $0.swingPercent = value } }
-                ), in: 50...75, step: 0.1)
+                    set: { value in model.updateSelected { $0.swingPercent = (value * 10).rounded() / 10 } }
+                ), in: 50...75)
                 .tint(theme.note)
             }
 
@@ -2104,8 +2120,22 @@ private struct PadSettingsPanel: View {
                 Text(valueText).foregroundStyle(theme.note)
             }
             .font(RTType.label(10))
-            Slider(value: value, in: range, step: step).tint(theme.note)
+            Slider(value: steppedBinding(value, range: range, step: step), in: range).tint(theme.note)
         }
+    }
+
+    private func steppedBinding(
+        _ value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: { value.wrappedValue },
+            set: { raw in
+                let quantized = (raw / step).rounded() * step
+                value.wrappedValue = min(max(quantized, range.lowerBound), range.upperBound)
+            }
+        )
     }
 
     private func humanizeBiasLabel(_ bias: Double) -> String {
@@ -2189,7 +2219,10 @@ private struct LiveCCPopover: View {
             HStack(spacing: 10) {
                 Text("NUDGE RANGE")
                     .font(RTType.label(9))
-                Slider(value: tempoNudgeRange, in: 0.1...120, step: 0.1)
+                Slider(value: Binding(
+                    get: { tempoNudgeRange.wrappedValue },
+                    set: { tempoNudgeRange.wrappedValue = max(0.1, ($0 * 10).rounded() / 10) }
+                ), in: 0.1...120)
                     .tint(theme.note)
                 Text("±\(model.configuration.liveCC.tempoNudgeRangeBPM, specifier: "%.1f") BPM")
                     .font(RTType.body(10))

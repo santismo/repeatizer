@@ -2,7 +2,7 @@
 
 Repeatizer is a complete macOS MIDI effect for Logic Pro with repeat, pattern, and Instrument modes. Instrument mode provides chord and ascending, downward, or random arpeggiator playback, rhythm styles and variations, octave range, probability, gate, velocity, and humanization controls.
 
-The interface uses the shared Logic-inspired Songizer visual system: system text, compact charcoal controls, recessed sliders, and meaningful state color. The AUv3 lives inside an invisible `LSUIElement` support container and does not present a separate app window.
+The interface uses the shared Logic-inspired Songizer visual system: system text, compact charcoal controls, recessed sliders, and meaningful state color. Fine-control sliders quantize their values without creating thousands of native tick marks, and requested drum patterns are generated on demand, keeping the editor responsive at first open. The AUv3 lives inside an invisible `LSUIElement` support container and does not present a separate app window.
 
 ## Install locally
 
