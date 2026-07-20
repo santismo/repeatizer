@@ -14,20 +14,30 @@ xcodebuild -project "$ROOT/Repeatizer.xcodeproj" -scheme Repeatizer -configurati
 
 APP="$DERIVED/Build/Products/Release/Repeatizer.app"
 EXTENSION="$APP/Contents/PlugIns/RepeatizerExtension.appex"
+SUPPORT_ROOT="$HOME/Library/Application Support/Songizer"
+DESTINATION="$SUPPORT_ROOT/Repeatizer/Repeatizer.app"
+BACKUP="$SUPPORT_ROOT/Development Archive/$(date +%Y%m%d-%H%M%S)/Repeatizer/Repeatizer.app"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
 codesign --force --options runtime --sign "$SIGN_IDENTITY" --entitlements "$ROOT/AUv3Extension/RepeatizerExtension.entitlements" "$EXTENSION"
 codesign --force --options runtime --sign "$SIGN_IDENTITY" --entitlements "$ROOT/RepeatizerHost/RepeatizerHost.entitlements" "$APP"
-pkill -x Repeatizer 2>/dev/null || true
-if [[ -d /Applications/Repeatizer.app ]]; then
-  pluginkit -r /Applications/Repeatizer.app || true
+codesign --verify --deep --strict --verbose=2 "$APP"
+
+if [[ -d "$DESTINATION" ]]; then
+  pluginkit -r "$DESTINATION/Contents/PlugIns/RepeatizerExtension.appex" || true
+  "$LSREGISTER" -u "$DESTINATION" || true
+  mkdir -p "${BACKUP:h}"
+  mv "$DESTINATION" "$BACKUP"
 fi
-rm -rf /Applications/Repeatizer.app
-ditto "$APP" /Applications/Repeatizer.app
+mkdir -p "${DESTINATION:h}"
+ditto "$APP" "$DESTINATION"
+xattr -dr com.apple.quarantine "$DESTINATION" 2>/dev/null || true
+codesign --verify --deep --strict --verbose=2 "$DESTINATION"
 killall AudioComponentRegistrar 2>/dev/null || true
-pluginkit -a /Applications/Repeatizer.app
-pluginkit -a /Applications/Repeatizer.app/Contents/PlugIns/RepeatizerExtension.appex
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Repeatizer.app
+"$LSREGISTER" -f "$DESTINATION"
+pluginkit -a "$DESTINATION/Contents/PlugIns/RepeatizerExtension.appex"
 for attempt in {1..10}; do
-  if pluginkit -m -A -D -i com.repeatizer.app.RepeatizerExtension | grep -q com.repeatizer; then
+  if pluginkit -m -A -D -i com.santismo.repeatizer.auv3.extension | grep -q com.santismo.repeatizer.auv3.extension; then
     exit 0
   fi
   sleep 1

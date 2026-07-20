@@ -5,13 +5,14 @@ private final class RepeatizerPluginModel: ObservableObject {
     let audioUnit: RepeatizerAudioUnit
     @Published var configuration: RepeatizerConfiguration
     @Published var selectedNote: Int?
-    @Published var theme = PluginTheme.dark
+    @Published var theme = PluginTheme.logic
     @Published var presetID = RepeatizerPresets.gmStandard.id
     @Published var randomGenre: DrumPatternStyle = .foundation
     @Published var randomMode: AllPadRandomMode = .selectedGenre
     @Published var heldNotes: Set<Int> = []
     @Published var liveNote: Int?
     @Published var capturedInputNote: Int?
+    @Published private(set) var effectiveBPM = 120.0
     @Published var settingsVisible = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
@@ -23,6 +24,7 @@ private final class RepeatizerPluginModel: ObservableObject {
     private var lastHistoryAction: String?
     private var lastHistoryDate = Date.distantPast
     private var patternRandomNonce = 0
+    private var instrumentRandomNonce = 0
 
     init(audioUnit: RepeatizerAudioUnit) {
         self.audioUnit = audioUnit
@@ -150,6 +152,181 @@ private final class RepeatizerPluginModel: ObservableObject {
     func setSettingsMode(_ mode: SettingsMode) {
         mutate(action: "settings-mode") { $0.settingsMode = mode }
         if selectedNote == nil { selectedNote = configuration.visibleNotes.first }
+    }
+
+    func setPerformanceSurface(_ surface: PerformanceSurface) {
+        mutate(action: "performance-surface") { configuration in
+            configuration.performanceSurface = surface
+            // Instrument mode routes every held pitch through the master lane,
+            // so a played chord shares one repeat rhythm.
+            if surface == .instrument {
+                configuration.settingsMode = .master
+                configuration.tapLive = false
+            }
+        }
+        if surface == .instrument {
+            selectedNote = nil
+            settingsVisible = false
+        }
+    }
+
+    func setInstrumentDivision(_ division: RepeatDivision) {
+        mutate(action: "instrument-division") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.masterSettings.division = division
+            configuration.masterSettings.repeatFillEnabled = false
+        }
+    }
+
+    func setInstrumentSwing(_ swing: Double) {
+        mutate(action: "instrument-swing") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.masterSettings.swingPercent = min(max(swing, 50), 75)
+        }
+    }
+
+    func setInstrumentPlaybackMode(_ mode: InstrumentPlaybackMode) {
+        mutate(action: "instrument-playback-mode") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.instrumentSettings.playbackMode = mode
+        }
+    }
+
+    func setInstrumentStyle(_ style: InstrumentStyle) {
+        mutate(action: "instrument-style") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.instrumentSettings.style = style
+        }
+    }
+
+    func setInstrumentPatternVariant(_ variant: Int) {
+        mutate(action: "instrument-pattern-variant") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.instrumentSettings.patternVariant = min(max(variant, 0), 7)
+        }
+    }
+
+    func setInstrumentOctaveRange(_ octaves: Int) {
+        mutate(action: "instrument-octaves") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.instrumentSettings.octaveRange = min(max(octaves, -2), 2)
+        }
+    }
+
+    func setInstrumentVariation(_ variation: Double) {
+        mutate(action: "instrument-variation") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.instrumentSettings.variation = min(max(variation, 0), 1)
+        }
+    }
+
+    func setInstrumentLivePattern(_ enabled: Bool) {
+        mutate(action: "instrument-live-pattern") {
+            $0.instrumentSettings.livePatternEnabled = enabled
+        }
+    }
+
+    func setInstrumentLivePatternPhraseLength(_ length: Int) {
+        mutate(action: "instrument-live-phrase") {
+            $0.instrumentSettings.livePatternPhraseLength = [1, 2, 4, 8].contains(length) ? length : 1
+        }
+    }
+
+    func setInstrumentPatternAutoFill(_ value: Double) {
+        mutate(action: "instrument-pattern-fill") { $0.instrumentSettings.patternAutoFill = min(max(value, 0), 1) }
+    }
+
+    func setInstrumentPatternFluctuation(_ value: Double) {
+        mutate(action: "instrument-pattern-fluctuation") { $0.instrumentSettings.patternFluctuation = min(max(value, 0), 1) }
+    }
+
+    func setInstrumentPatternProbability(_ value: Double) {
+        mutate(action: "instrument-pattern-probability") { $0.instrumentSettings.patternProbability = min(max(value, 0), 1) }
+    }
+
+    func setInstrumentPatternComplexity(_ value: Double) {
+        mutate(action: "instrument-pattern-complexity") { $0.instrumentSettings.patternComplexity = min(max(value, 0), 1) }
+    }
+
+    func setInstrumentArpGate(_ value: Double) {
+        mutate(action: "instrument-arp-gate") { $0.instrumentSettings.arpGate = min(max(value, 0.05), 1) }
+    }
+
+    func randomizeArpeggiator() {
+        instrumentRandomNonce &+= 1
+        let token = max(1, instrumentRandomNonce)
+        mutate(action: "instrument-arp-random-\(token)") { configuration in
+            configuration.instrumentSettings.seed = token &* 97 &+ 11
+        }
+    }
+
+    func setInstrumentVelocityMode(_ mode: VelocityMode) {
+        mutate(action: "instrument-velocity-mode") { $0.masterSettings.velocityMode = mode }
+    }
+
+    func setInstrumentFixedVelocity(_ velocity: Int) {
+        mutate(action: "instrument-fixed-velocity") { $0.masterSettings.fixedVelocity = min(max(velocity, 1), 127) }
+    }
+
+    func setInstrumentVelocityHumanize(_ enabled: Bool) {
+        mutate(action: "instrument-velocity-humanize") {
+            if $0.masterSettings.velocityMode == .humanized { $0.masterSettings.velocityMode = .received }
+            $0.masterSettings.velocityHumanizeEnabled = enabled
+        }
+    }
+
+    func setInstrumentHumanizeAmount(_ amount: Int) {
+        mutate(action: "instrument-humanize-amount") { $0.masterSettings.humanizeAmount = min(max(amount, 0), 64) }
+    }
+
+    func setInstrumentHumanizeProbability(_ value: Double) {
+        mutate(action: "instrument-humanize-probability") { $0.masterSettings.humanizeProbability = min(max(value, 0), 1) }
+    }
+
+    func setInstrumentHumanizeBias(_ value: Double) {
+        mutate(action: "instrument-humanize-bias") { $0.masterSettings.humanizeBias = min(max(value, -1), 1) }
+    }
+
+    func smartRandomizeInstrument() {
+        guard configuration.instrumentSettings.playbackMode == .chord else { return }
+        instrumentRandomNonce &+= 1
+        let token = max(1, instrumentRandomNonce)
+        let styles = InstrumentStyle.allCases
+        mutate(action: "instrument-smart-random-\(token)") { configuration in
+            configuration.performanceSurface = .instrument
+            configuration.settingsMode = .master
+            configuration.tapLive = false
+            configuration.masterSettings.playbackMode = .repeatNote
+            configuration.instrumentSettings.style = styles[(token &* 7 &+ 3) % styles.count]
+            configuration.instrumentSettings.patternVariant = (token &* 3 &+ 2) % 8
+            configuration.instrumentSettings.playbackMode = .chord
+            configuration.instrumentSettings.octaveRange = [-2, -1, 0, 1, 2][token % 5]
+            configuration.instrumentSettings.variation = [0.12, 0.28, 0.45, 0.62][token % 4]
+            configuration.instrumentSettings.livePatternEnabled = token % 2 == 0
+            configuration.instrumentSettings.livePatternPhraseLength = [1, 2, 4][token % 3]
+            configuration.instrumentSettings.patternAutoFill = [0.05, 0.16, 0.28][token % 3]
+            configuration.instrumentSettings.patternFluctuation = [0.08, 0.15, 0.24][token % 3]
+            configuration.instrumentSettings.patternProbability = [0.82, 0.9, 0.96][token % 3]
+            configuration.instrumentSettings.patternComplexity = [0.3, 0.52, 0.75][token % 3]
+            configuration.instrumentSettings.seed = token &* 97 &+ 11
+        }
     }
 
     func setCaptureShortTaps(_ enabled: Bool) {
@@ -365,7 +542,7 @@ private final class RepeatizerPluginModel: ObservableObject {
             configuration = RepeatizerPresets.gmStandard.configuration
             configuration.liveCC = retainedMappings
         }
-        theme = .dark
+        theme = .logic
         presetID = RepeatizerPresets.gmStandard.id
         randomGenre = .foundation
         randomMode = .selectedGenre
@@ -394,8 +571,15 @@ private final class RepeatizerPluginModel: ObservableObject {
     func pollInput() {
         refreshConfigurationRestoredByHost()
 
-        let visible = configuration.visibleNotes
-        let nextHeld = Set(visible.filter(audioUnit.isNoteHeld))
+        let nextBPM = audioUnit.currentBPM()
+        if nextBPM.isFinite, abs(nextBPM - effectiveBPM) >= 0.01 {
+            effectiveBPM = nextBPM
+        }
+
+        let monitoredNotes = configuration.performanceSurface == .instrument
+            ? Array(0...127)
+            : configuration.visibleNotes
+        let nextHeld = Set(monitoredNotes.filter(audioUnit.isNoteHeld))
         if nextHeld != heldNotes { heldNotes = nextHeld }
 
         let activity = audioUnit.inputActivityCounter()
@@ -405,7 +589,9 @@ private final class RepeatizerPluginModel: ObservableObject {
             liveNote = note
             capturedInputNote = note
             liveUntil = Date().addingTimeInterval(0.34)
-            if visible.contains(note) { selectedNote = note }
+            if configuration.performanceSurface == .drums, configuration.visibleNotes.contains(note) {
+                selectedNote = note
+            }
         } else if let liveNote, !nextHeld.contains(liveNote), Date() > liveUntil {
             self.liveNote = nil
         }
@@ -490,71 +676,33 @@ private enum AllPadRandomMode: String, CaseIterable, Identifiable {
 }
 
 private enum PluginTheme: String, CaseIterable, Identifiable {
-    case dark = "Dark"
-    case graphite = "Graphite"
-    case studio = "Studio"
-    case console = "Console"
+    case logic = "Logic"
 
     var id: String { rawValue }
-    var isLight: Bool { self == .studio }
-    var windowTop: Color {
-        switch self {
-        case .dark: Color(red: 0.035, green: 0.035, blue: 0.038)
-        case .graphite: Color(red: 0.106, green: 0.125, blue: 0.145)
-        case .studio: Color(red: 0.80, green: 0.82, blue: 0.85)
-        case .console: Color(red: 0.025, green: 0.086, blue: 0.125)
-        }
-    }
-    var windowBottom: Color {
-        switch self {
-        case .dark: Color.black
-        case .graphite: Color(red: 0.043, green: 0.055, blue: 0.066)
-        case .studio: Color(red: 0.64, green: 0.67, blue: 0.71)
-        case .console: Color(red: 0.008, green: 0.028, blue: 0.045)
-        }
-    }
-    var panel: Color {
-        switch self {
-        case .dark: Color(red: 0.075, green: 0.075, blue: 0.08)
-        case .graphite: Color(red: 0.137, green: 0.161, blue: 0.184)
-        case .studio: Color(red: 0.84, green: 0.86, blue: 0.89)
-        case .console: Color(red: 0.043, green: 0.126, blue: 0.17)
-        }
-    }
-    var raised: Color {
-        switch self {
-        case .dark: Color(red: 0.13, green: 0.13, blue: 0.14)
-        case .graphite: Color(red: 0.176, green: 0.204, blue: 0.231)
-        case .studio: Color(red: 0.72, green: 0.75, blue: 0.79)
-        case .console: Color(red: 0.055, green: 0.16, blue: 0.21)
-        }
-    }
-    var board: Color {
-        switch self {
-        case .dark: Color(red: 0.022, green: 0.022, blue: 0.024)
-        case .graphite: Color(red: 0.071, green: 0.086, blue: 0.10)
-        case .studio: Color(red: 0.68, green: 0.71, blue: 0.75)
-        case .console: Color(red: 0.018, green: 0.061, blue: 0.084)
-        }
-    }
-    var line: Color { isLight ? Color.black.opacity(0.24) : Color.white.opacity(0.20) }
-    var text: Color { isLight ? Color(red: 0.08, green: 0.09, blue: 0.105) : Color.white.opacity(0.96) }
-    var muted: Color { isLight ? Color.black.opacity(0.56) : Color.white.opacity(0.56) }
-    var note: Color { self == .dark ? .white : (self == .console ? Color(red: 0.18, green: 0.87, blue: 0.72) : Color(red: 0.29, green: 0.72, blue: 0.64)) }
-    var master: Color { self == .dark ? Color.white.opacity(0.82) : Color(red: 0.94, green: 0.65, blue: 0.24) }
-    var live: Color { self == .dark ? .white : Color(red: 0.28, green: 0.86, blue: 0.56) }
-    var headerColors: [Color] { [panel.opacity(0.76), panel.opacity(0.76)] }
+    var isLight: Bool { false }
+    var windowTop: Color { Color(red: 0.135, green: 0.135, blue: 0.135) }
+    var windowBottom: Color { Color(red: 0.095, green: 0.095, blue: 0.095) }
+    var panel: Color { Color(red: 0.155, green: 0.155, blue: 0.155) }
+    var raised: Color { Color(red: 0.255, green: 0.255, blue: 0.255) }
+    var board: Color { Color(red: 0.105, green: 0.105, blue: 0.105) }
+    var line: Color { Color.white.opacity(0.14) }
+    var text: Color { Color.white.opacity(0.91) }
+    var muted: Color { Color.white.opacity(0.58) }
+    var note: Color { Color(red: 0.20, green: 0.47, blue: 0.91) }
+    var master: Color { Color(red: 0.96, green: 0.48, blue: 0.10) }
+    var live: Color { Color(red: 0.31, green: 0.69, blue: 0.25) }
+    var headerColors: [Color] { [Color(red: 0.18, green: 0.18, blue: 0.18), panel] }
 }
 
 private enum RTType {
     static func body(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("Avenir Next", fixedSize: size).weight(weight)
+        .system(size: size, weight: weight, design: .default)
     }
-    static func display(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .custom("Avenir Next Condensed", fixedSize: size).weight(weight)
+    static func display(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
     }
-    static func label(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .custom("Avenir Next", fixedSize: size).weight(weight)
+    static func label(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
     }
 }
 
@@ -696,11 +844,15 @@ struct RepeatizerPluginView: View {
             header(theme)
             Rectangle().fill(theme.line.opacity(0.7)).frame(height: 1)
             HStack(spacing: 0) {
-                padBoard(theme)
-                if model.settingsVisible, let note = model.selectedNote {
-                    Rectangle().fill(theme.line.opacity(0.7)).frame(width: 1)
-                    PadSettingsPanel(model: model, note: note, theme: theme)
-                        .frame(minWidth: 390, idealWidth: 430, maxWidth: 470)
+                if model.configuration.performanceSurface == .drums {
+                    padBoard(theme)
+                    if model.settingsVisible, let note = model.selectedNote {
+                        Rectangle().fill(theme.line.opacity(0.7)).frame(width: 1)
+                        PadSettingsPanel(model: model, note: note, theme: theme)
+                            .frame(minWidth: 390, idealWidth: 430, maxWidth: 470)
+                    }
+                } else {
+                    InstrumentBoard(model: model, theme: theme)
                 }
             }
         }
@@ -717,9 +869,8 @@ struct RepeatizerPluginView: View {
 
     private func header(_ theme: PluginTheme) -> some View {
         WrappingRow(horizontalSpacing: 14, verticalSpacing: 8) {
-            Text("REPEATIZER")
-                .font(RTType.display(22, .heavy))
-                .tracking(0.8)
+            Text("Repeatizer")
+                .font(RTType.display(18, .medium))
                 .frame(width: 150, alignment: .leading)
 
             HStack(spacing: 4) {
@@ -744,13 +895,20 @@ struct RepeatizerPluginView: View {
             .onChange(of: model.presetID) { _, id in
                 if id != "custom" { model.applyPreset(id) }
             }
-            ClockControls(model: model, theme: theme)
 
-            Picker("Theme", selection: $model.theme) {
-                ForEach(PluginTheme.allCases) { Text($0.rawValue).tag($0) }
+            Picker("Performance surface", selection: Binding(
+                get: { model.configuration.performanceSurface },
+                set: { model.setPerformanceSurface($0) }
+            )) {
+                ForEach(PerformanceSurface.allCases) { surface in
+                    Text(surface.rawValue.uppercased()).tag(surface)
+                }
             }
             .labelsHidden()
-            .frame(width: 82)
+            .pickerStyle(.segmented)
+            .frame(width: 160)
+            ClockControls(model: model, theme: theme)
+
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -921,13 +1079,444 @@ struct RepeatizerPluginView: View {
                     .buttonStyle(CompactMetalButtonStyle(theme: theme))
                     .padding(8)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 2))
                 .shadow(color: .black.opacity(0.55), radius: 18, y: 8)
                 .padding(.top, 70)
                 .padding(.trailing, 14)
             }
         }
+    }
+}
+
+private struct InstrumentBoard: View {
+    @ObservedObject var model: RepeatizerPluginModel
+    let theme: PluginTheme
+
+    private var settings: PadConfiguration { model.configuration.masterSettings }
+    private var instrument: InstrumentPerformanceSettings { model.configuration.instrumentSettings }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            WrappingRow(horizontalSpacing: 12, verticalSpacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("INSTRUMENT")
+                        .font(RTType.display(15))
+                }
+
+                RepeatDivisionSlider(
+                    label: "DIVISION",
+                    value: Binding(
+                        get: { settings.division },
+                        set: { model.setInstrumentDivision($0) }
+                    ),
+                    theme: theme
+                )
+                .frame(width: 210)
+
+                HStack(spacing: 6) {
+                    Text("TIME")
+                        .font(RTType.label(9))
+                        .foregroundStyle(theme.muted)
+                    Picker("Instrument time scale", selection: Binding(
+                        get: { model.configuration.timeScale },
+                        set: { model.setTimeScale($0) }
+                    )) {
+                        ForEach(GlobalTimeScale.allCases) { scale in
+                            Text(scale.rawValue.uppercased()).tag(scale)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                }
+
+                HStack(spacing: 6) {
+                    Text("SWING \(Int(settings.swingPercent.rounded()))%")
+                        .font(RTType.label(9))
+                        .foregroundStyle(theme.muted)
+                    Slider(value: Binding(
+                        get: { settings.swingPercent },
+                        set: { model.setInstrumentSwing($0) }
+                    ), in: 50...75, step: 1)
+                    .frame(width: 115)
+                }
+
+                Toggle("CAPTURE SHORT TAPS", isOn: Binding(
+                    get: { model.configuration.captureShortTaps },
+                    set: { model.setCaptureShortTaps($0) }
+                ))
+                .toggleStyle(.switch)
+                .font(RTType.label(9))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.panel.opacity(0.48))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    IncomingMIDIMonitor(
+                        heldNotes: model.heldNotes,
+                        liveNote: model.liveNote,
+                        theme: theme
+                    )
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("PLAY MODE")
+                            .font(RTType.label(10))
+                            .tracking(0.9)
+                            .foregroundStyle(theme.muted)
+                        Picker("Instrument play mode", selection: Binding(
+                            get: { instrument.playbackMode },
+                            set: { model.setInstrumentPlaybackMode($0) }
+                        )) {
+                            ForEach(InstrumentPlaybackMode.allCases) { mode in
+                                Text(mode.rawValue.uppercased()).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(12)
+                    .background(theme.panel.opacity(0.72))
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+
+                    if instrument.playbackMode == .chord {
+                        chordPatternControls
+                    } else {
+                        arpeggiatorControls
+                    }
+
+                    instrumentHumanizeControls
+                }
+                .padding(18)
+                .frame(maxWidth: 920, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .background(theme.board.opacity(0.82))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var chordPatternControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("CHORD PATTERNS · \(InstrumentStyle.allCases.count) STYLES × 8")
+                    .font(RTType.label(10))
+                    .tracking(0.9)
+                    .foregroundStyle(theme.muted)
+                Spacer()
+                Button { model.smartRandomizeInstrument() } label: {
+                    Label("SMART PLAY", systemImage: "dice.fill")
+                }
+                .buttonStyle(CompactMetalButtonStyle(theme: theme, emphasized: true))
+            }
+
+            WrappingRow(horizontalSpacing: 12, verticalSpacing: 8) {
+                HStack(spacing: 6) {
+                    Text("STYLE").font(RTType.label(9)).foregroundStyle(theme.muted)
+                    Picker("Chord pattern style", selection: Binding(
+                        get: { instrument.style },
+                        set: { model.setInstrumentStyle($0) }
+                    )) {
+                        ForEach(InstrumentStyle.allCases) { style in
+                            Text(style.rawValue.uppercased()).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 188)
+                }
+
+                HStack(spacing: 5) {
+                    Text("PATTERN").font(RTType.label(9)).foregroundStyle(theme.muted)
+                    Button { model.setInstrumentPatternVariant((instrument.patternVariant + 7) % 8) } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(CompactMetalButtonStyle(theme: theme))
+                    Picker("Chord pattern", selection: Binding(
+                        get: { instrument.patternVariant },
+                        set: { model.setInstrumentPatternVariant($0) }
+                    )) {
+                        ForEach(0..<8, id: \.self) { variant in Text("P\(variant + 1)").tag(variant) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 230)
+                    Button { model.setInstrumentPatternVariant((instrument.patternVariant + 1) % 8) } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(CompactMetalButtonStyle(theme: theme))
+                }
+            }
+
+            WrappingRow(horizontalSpacing: 14, verticalSpacing: 10) {
+                Toggle("LIVE PATTERN", isOn: Binding(
+                    get: { instrument.livePatternEnabled },
+                    set: { model.setInstrumentLivePattern($0) }
+                ))
+                .font(RTType.label(10))
+                .toggleStyle(.switch)
+
+                if instrument.livePatternEnabled {
+                    Picker("Live phrase length", selection: Binding(
+                        get: { instrument.livePatternPhraseLength },
+                        set: { model.setInstrumentLivePatternPhraseLength($0) }
+                    )) {
+                        Text("1 PHRASE").tag(1)
+                        Text("2 PHRASES").tag(2)
+                        Text("4 PHRASES").tag(4)
+                        Text("8 PHRASES").tag(8)
+                    }
+                    .labelsHidden()
+                    .frame(width: 132)
+                }
+            }
+
+            instrumentSlider("VARIATION", value: Binding(
+                get: { instrument.variation }, set: { model.setInstrumentVariation($0) }
+            ), text: percent(instrument.variation))
+            instrumentSlider("COMPLEXITY", value: Binding(
+                get: { instrument.patternComplexity }, set: { model.setInstrumentPatternComplexity($0) }
+            ), text: percent(instrument.patternComplexity))
+            instrumentSlider("AUTO FILL", value: Binding(
+                get: { instrument.patternAutoFill }, set: { model.setInstrumentPatternAutoFill($0) }
+            ), text: percent(instrument.patternAutoFill))
+            instrumentSlider("FLUCTUATION", value: Binding(
+                get: { instrument.patternFluctuation }, set: { model.setInstrumentPatternFluctuation($0) }
+            ), text: percent(instrument.patternFluctuation))
+            instrumentSlider("HIT PROBABILITY", value: Binding(
+                get: { instrument.patternProbability }, set: { model.setInstrumentPatternProbability($0) }
+            ), text: percent(instrument.patternProbability))
+        }
+        .padding(12)
+        .background(theme.panel.opacity(0.72))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+
+    private var arpeggiatorControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ARPEGGIATOR")
+                .font(RTType.label(10))
+                .tracking(0.9)
+                .foregroundStyle(theme.muted)
+
+            WrappingRow(horizontalSpacing: 14, verticalSpacing: 8) {
+                HStack(spacing: 6) {
+                    Text("OCTAVE SPREAD").font(RTType.label(9)).foregroundStyle(theme.muted)
+                    Picker("Arpeggiator octave spread", selection: Binding(
+                        get: { instrument.octaveRange },
+                        set: { model.setInstrumentOctaveRange($0) }
+                    )) {
+                        Text("−2").tag(-2)
+                        Text("−1").tag(-1)
+                        Text("0").tag(0)
+                        Text("+1").tag(1)
+                        Text("+2").tag(2)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 210)
+                }
+
+                if instrument.playbackMode == .arpeggioRandom {
+                    Button { model.randomizeArpeggiator() } label: {
+                        Label("NEW ORDER", systemImage: "shuffle")
+                    }
+                    .buttonStyle(CompactMetalButtonStyle(theme: theme, emphasized: true))
+                }
+            }
+
+            instrumentSlider("ARP GATE", value: Binding(
+                get: { instrument.arpGate }, set: { model.setInstrumentArpGate($0) }
+            ), text: percent(instrument.arpGate), range: 0.05...1)
+        }
+        .padding(12)
+        .background(theme.panel.opacity(0.72))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+
+    private var instrumentHumanizeControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DYNAMICS & HUMANIZE")
+                .font(RTType.label(10))
+                .tracking(0.9)
+                .foregroundStyle(theme.muted)
+
+            Picker("Instrument velocity base", selection: Binding(
+                get: { settings.velocityMode == .fixed ? VelocityMode.fixed : VelocityMode.received },
+                set: { model.setInstrumentVelocityMode($0) }
+            )) {
+                Text("RECEIVED").tag(VelocityMode.received)
+                Text("FIXED / LOCKED").tag(VelocityMode.fixed)
+            }
+            .pickerStyle(.segmented)
+
+            if settings.velocityMode == .fixed {
+                instrumentSlider("FIXED VELOCITY", value: Binding(
+                    get: { Double(settings.fixedVelocity) },
+                    set: { model.setInstrumentFixedVelocity(Int($0.rounded())) }
+                ), text: "\(settings.fixedVelocity)", range: 1...127, step: 1)
+            }
+
+            Toggle("VELOCITY HUMANIZE", isOn: Binding(
+                get: { settings.velocityHumanizeEnabled || settings.velocityMode == .humanized },
+                set: { model.setInstrumentVelocityHumanize($0) }
+            ))
+            .font(RTType.label(10))
+            .toggleStyle(.switch)
+
+            if settings.velocityHumanizeEnabled || settings.velocityMode == .humanized {
+                instrumentSlider("HUMANIZE RANGE", value: Binding(
+                    get: { Double(settings.humanizeAmount) },
+                    set: { model.setInstrumentHumanizeAmount(Int($0.rounded())) }
+                ), text: "±\(settings.humanizeAmount)", range: 0...64, step: 1)
+                instrumentSlider("HIT PROBABILITY", value: Binding(
+                    get: { settings.humanizeProbability },
+                    set: { model.setInstrumentHumanizeProbability($0) }
+                ), text: percent(settings.humanizeProbability))
+                instrumentSlider("BIAS", value: Binding(
+                    get: { settings.humanizeBias },
+                    set: { model.setInstrumentHumanizeBias($0) }
+                ), text: humanizeBiasLabel(settings.humanizeBias), range: -1...1)
+            }
+
+            Rectangle().fill(theme.line.opacity(0.62)).frame(height: 1)
+            Toggle("TIMING HUMANIZE", isOn: Binding(
+                get: { model.configuration.timingHumanizeEnabled },
+                set: { model.setTimingHumanize($0) }
+            ))
+            .font(RTType.label(10))
+            .toggleStyle(.switch)
+
+            if model.configuration.timingHumanizeEnabled {
+                instrumentSlider("TIMING RANGE", value: Binding(
+                    get: { model.configuration.timingHumanizeMilliseconds },
+                    set: { model.setTimingHumanizeMilliseconds($0) }
+                ), text: String(format: "±%.1f ms", model.configuration.timingHumanizeMilliseconds), range: 0...30, step: 0.5)
+                instrumentSlider("TIMING PROBABILITY", value: Binding(
+                    get: { model.configuration.timingHumanizeProbability },
+                    set: { model.setTimingHumanizeProbability($0) }
+                ), text: percent(model.configuration.timingHumanizeProbability))
+                instrumentSlider("EARLY / LATE", value: Binding(
+                    get: { model.configuration.timingHumanizeBias },
+                    set: { model.setTimingHumanizeBias($0) }
+                ), text: timingBiasLabel(model.configuration.timingHumanizeBias), range: -1...1)
+            }
+        }
+        .padding(12)
+        .background(theme.panel.opacity(0.72))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+
+    private func instrumentSlider(
+        _ label: String,
+        value: Binding<Double>,
+        text: String,
+        range: ClosedRange<Double> = 0...1,
+        step: Double = 0.01
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(RTType.label(9)).foregroundStyle(theme.muted).frame(width: 122, alignment: .leading)
+            Slider(value: value, in: range, step: step).tint(theme.note)
+            Text(text).font(RTType.label(9)).foregroundStyle(theme.note).frame(width: 70, alignment: .trailing)
+        }
+    }
+
+    private func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+
+    private func humanizeBiasLabel(_ bias: Double) -> String {
+        if abs(bias) < 0.01 { return "CENTER" }
+        return bias > 0 ? "+LOUD \(Int((bias * 100).rounded()))%" : "−SOFT \(Int((abs(bias) * 100).rounded()))%"
+    }
+
+    private func timingBiasLabel(_ bias: Double) -> String {
+        if abs(bias) < 0.01 { return "CENTER" }
+        return bias > 0 ? "LATE \(Int((bias * 100).rounded()))%" : "EARLY \(Int((abs(bias) * 100).rounded()))%"
+    }
+}
+
+private struct IncomingMIDIMonitor: View {
+    let heldNotes: Set<Int>
+    let liveNote: Int?
+    let theme: PluginTheme
+
+    private var detectedNotes: [Int] {
+        var notes = heldNotes
+        if let liveNote { notes.insert(liveNote) }
+        return notes.sorted()
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("NOTES")
+                .font(RTType.label(10))
+                .tracking(0.9)
+                .foregroundStyle(theme.muted)
+            if detectedNotes.isEmpty {
+                Text("—")
+                    .font(RTType.display(14, .regular))
+                    .foregroundStyle(theme.muted)
+            } else {
+                WrappingRow(horizontalSpacing: 7, verticalSpacing: 7) {
+                    ForEach(detectedNotes, id: \.self) { note in
+                        Text(instrumentMIDINoteName(note))
+                            .font(RTType.display(12, .regular))
+                            .foregroundStyle(heldNotes.contains(note) ? theme.live : theme.note)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(theme.raised)
+                        .overlay(Capsule().stroke(theme.line, lineWidth: 1))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(theme.panel.opacity(0.74))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+}
+
+private func instrumentMIDINoteName(_ note: Int) -> String {
+    let names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+    return names[(note % 12 + 12) % 12] + "\(note / 12 - 1)"
+}
+
+private struct RepeatDivisionSlider: View {
+    let label: String
+    let value: Binding<RepeatDivision>
+    let theme: PluginTheme
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text(label)
+                .font(RTType.label(9))
+                .foregroundStyle(theme.muted)
+            Slider(
+                value: Binding(
+                    get: { Double(value.wrappedValue.rawValue) },
+                    set: { rawValue in
+                        value.wrappedValue = RepeatDivision(rawValue: Int(rawValue.rounded())) ?? .sixteenth
+                    }
+                ),
+                in: 0...Double(RepeatDivision.allCases.count - 1),
+                step: 1
+            )
+            .tint(theme.note)
+            Text(value.wrappedValue.title)
+                .font(RTType.display(12, .regular))
+                .foregroundStyle(theme.note)
+                .frame(width: 32, alignment: .trailing)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityValue(value.wrappedValue.title)
     }
 }
 
@@ -995,7 +1584,7 @@ private struct PadButton: View {
                         Spacer()
                     }
                     Text(GMDrumMap.name(for: note).uppercased())
-                        .font(RTType.display(11, .heavy))
+                        .font(RTType.display(11, .regular))
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                     Spacer(minLength: 2)
@@ -1011,19 +1600,12 @@ private struct PadButton: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: live ? [theme.live.opacity(0.34), theme.raised] : [theme.raised, theme.panel],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .background(live ? theme.live.opacity(0.24) : (selected ? theme.note.opacity(0.14) : theme.raised))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 2)
                         .stroke(live ? theme.live : (selected ? theme.note : (master ? theme.master.opacity(0.75) : theme.line)), lineWidth: live ? 2.2 : (selected ? 1.7 : 1))
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .shadow(color: live ? theme.live.opacity(0.35) : .black.opacity(theme.isLight ? 0.08 : 0.25), radius: live ? 8 : 2, y: 2)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
                 .scaleEffect(held ? 0.975 : 1)
             }
             .buttonStyle(.plain)
@@ -1057,7 +1639,7 @@ private struct PadSettingsPanel: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.configuration.settingsMode == .master ? "MASTER SETTINGS" : GMDrumMap.name(for: note).uppercased())
-                        .font(RTType.display(17, .heavy))
+                        .font(RTType.display(17, .regular))
                     Text(model.configuration.settingsMode == .master
                          ? "NON-DESTRUCTIVE OVERRIDE · ALL PADS"
                          : "MIDI \(note) · \(model.selectedIsFollower ? "FOLLOWER" : (model.selectedIsMaster ? "MASTER" : "INDEPENDENT"))")
@@ -1098,7 +1680,7 @@ private struct PadSettingsPanel: View {
                     Image(systemName: "link")
                     Text("Following \(GMDrumMap.name(for: master)) exactly. Unfollow to edit this pad independently.")
                 }
-                .font(.caption.weight(.semibold))
+                .font(RTType.body(11))
                 .foregroundStyle(theme.text)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1144,16 +1726,14 @@ private struct PadSettingsPanel: View {
             if model.selectedPad.playbackMode == .pattern {
                 patternControls
             } else {
-                settingRow("REPEAT DIVISION") {
-                    Picker("Division", selection: Binding(
+                RepeatDivisionSlider(
+                    label: "REPEAT DIVISION",
+                    value: Binding(
                         get: { model.selectedPad.division },
                         set: { value in model.updateSelected { $0.division = value } }
-                    )) {
-                        ForEach(RepeatDivision.allCases) { Text($0.title).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 110)
-                }
+                    ),
+                    theme: theme
+                )
                 Toggle("SMART REPEAT FILLS", isOn: Binding(
                     get: { model.selectedPad.repeatFillEnabled },
                     set: { enabled in model.updateSelected { $0.repeatFillEnabled = enabled } }
@@ -1201,7 +1781,7 @@ private struct PadSettingsPanel: View {
                         set: { value in model.updateSelected { $0.repeatFillBalance = value } }
                     ), range: 0...1, valueText: percent(model.selectedPad.repeatFillBalance), step: 0.01)
                     Text("Creates varied phrase-ending fills. KIT BALANCE favors musically useful drum roles so the entire kit does not accelerate together.")
-                        .font(.caption2)
+                        .font(RTType.body(10))
                         .foregroundStyle(theme.muted)
                 }
             }
@@ -1222,7 +1802,7 @@ private struct PadSettingsPanel: View {
                     ? "AUTO follows the selected pattern's step division."
                     : "AUTO follows the repeat division.")
                  : "Swing is applied only on this independent grid.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
             VStack(spacing: 5) {
                 HStack {
@@ -1291,7 +1871,7 @@ private struct PadSettingsPanel: View {
                             .font(RTType.label(9))
                             .foregroundStyle(theme.note)
                         Text(model.selectedPattern.name)
-                            .font(RTType.body(11, .semibold))
+                            .font(RTType.body(11, .regular))
                             .lineLimit(1)
                     }
                     Spacer()
@@ -1299,8 +1879,8 @@ private struct PadSettingsPanel: View {
                 }
                 .padding(8)
                 .background(theme.raised.opacity(0.8))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.line))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line))
+                .clipShape(RoundedRectangle(cornerRadius: 2))
             }
             .menuStyle(.borderlessButton)
 
@@ -1339,7 +1919,7 @@ private struct PadSettingsPanel: View {
             ), range: 0...1, valueText: percent(model.selectedPad.patternProbability), step: 0.01)
 
             Text("Release stops this lane. Press again and it rejoins the pattern at the current project position.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
         }
     }
@@ -1411,7 +1991,7 @@ private struct PadSettingsPanel: View {
                         set: { model.setTimingHumanizeBias($0) }
                     ), range: -1...1, valueText: timingBiasLabel(model.configuration.timingHumanizeBias), step: 0.01)
                     Text("Timing changes generated repeat and pattern notes only, with range limited to keep notes inside their grid neighborhood.")
-                        .font(.caption2)
+                        .font(RTType.body(10))
                         .foregroundStyle(theme.muted)
                 }
             }
@@ -1489,7 +2069,7 @@ private struct PadSettingsPanel: View {
                     .frame(width: 110)
                 }
                 Text("The live hit uses its own FREE, EVEN, ODD, or BOTH grid. REPEAT WAIT separately decides when the held repeat or pattern resumes.")
-                    .font(.caption2)
+                    .font(RTType.body(10))
                     .foregroundStyle(theme.muted)
             }
         }
@@ -1500,7 +2080,7 @@ private struct PadSettingsPanel: View {
     private func settingsSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: icon)
-                .font(RTType.label(10, .heavy))
+                .font(RTType.label(10, .regular))
                 .tracking(0.8)
                 .foregroundStyle(theme.note)
             content()
@@ -1574,8 +2154,8 @@ private struct PatternPreview: View {
         .frame(height: CGFloat(rows) * 10 + CGFloat(rows - 1) * 2)
         .padding(7)
         .background(theme.board.opacity(0.78))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.line.opacity(0.7)))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line.opacity(0.7)))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
         .accessibilityLabel("Pattern preview with \(pattern.lengthSteps) steps")
     }
 }
@@ -1591,9 +2171,46 @@ private struct LiveCCPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("MIDI CC")
-                .font(RTType.display(13, .heavy))
+                .font(RTType.display(13, .regular))
             Text("Continuous mappings use the full 0–127 CC range. Division ± controls are momentary: any nonzero value holds the shift and CC 0 releases it.")
-                .font(.caption)
+                .font(RTType.body(11))
+                .foregroundStyle(theme.muted)
+
+            HStack(spacing: 10) {
+                Toggle("TEMPO NUDGE", isOn: tempoNudgeEnabled)
+                    .font(RTType.label(9))
+                Spacer()
+                ccInput(tempoNudgeCC)
+            }
+            .padding(9)
+            .background(theme.board)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(model.configuration.liveCC.tempoNudgeEnabled ? theme.note.opacity(0.65) : theme.line))
+
+            HStack(spacing: 10) {
+                Text("NUDGE RANGE")
+                    .font(RTType.label(9))
+                Slider(value: tempoNudgeRange, in: 0.1...120, step: 0.1)
+                    .tint(theme.note)
+                Text("±\(model.configuration.liveCC.tempoNudgeRangeBPM, specifier: "%.1f") BPM")
+                    .font(RTType.body(10))
+                    .frame(width: 78, alignment: .trailing)
+            }
+            .padding(9)
+            .background(theme.board)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.line))
+
+            HStack {
+                Text("ENGINE TEMPO")
+                    .font(RTType.label(9))
+                Spacer()
+                Text("\(model.effectiveBPM, specifier: "%.1f") BPM")
+                    .font(RTType.body(11))
+                    .foregroundStyle(theme.note)
+            }
+            .padding(.horizontal, 9)
+
+            Text("CC 64 is neutral; 0 and 127 reach the selected negative and positive BPM range around Manual or host/project tempo. A spring controller returns itself to 64, while a regular controller holds the chosen tempo offset until its CC value changes.")
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
 
             let swing = model.configuration.liveCC.mapping(.swing)
@@ -1605,7 +2222,7 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(swing.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(swing.enabled ? theme.note.opacity(0.65) : theme.line))
 
             let divisionSlider = model.configuration.liveCC.mapping(.divisionDepth)
             HStack(spacing: 10) {
@@ -1616,7 +2233,7 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(divisionSlider.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(divisionSlider.enabled ? theme.note.opacity(0.65) : theme.line))
 
             let velocitySlider = model.configuration.liveCC.mapping(.velocity)
             HStack(spacing: 10) {
@@ -1627,14 +2244,14 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(velocitySlider.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(velocitySlider.enabled ? theme.note.opacity(0.65) : theme.line))
 
             Text("The division slider scrolls from the slowest to fastest repeat division. The velocity slider locks generated notes from 1 to 127; velocity humanize still applies afterward.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
 
             Text("MOMENTARY DIVISION ±1")
-                .font(RTType.label(9, .heavy))
+                .font(RTType.label(9, .regular))
                 .foregroundStyle(theme.note)
 
             ForEach(divisionActions, id: \.self) { action in
@@ -1647,11 +2264,11 @@ private struct LiveCCPopover: View {
                 }
                 .padding(9)
                 .background(theme.board)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(mapping.enabled ? theme.note.opacity(0.65) : theme.line))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(mapping.enabled ? theme.note.opacity(0.65) : theme.line))
             }
 
             Text("EVEN selects the next faster or slower straight division. ODD selects the next faster or slower triplet division—even when the pad starts on the other family.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
         }
         .padding(16)
@@ -1663,6 +2280,21 @@ private struct LiveCCPopover: View {
     private var swingEnabled: Binding<Bool> { Binding(
         get: { model.configuration.liveCC.mapping(.swing).enabled },
         set: { value in model.updateLiveCC("swing-enabled") { $0.updateMapping(.swing) { $0.enabled = value } } }
+    ) }
+
+    private var tempoNudgeEnabled: Binding<Bool> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeEnabled },
+        set: { value in model.updateLiveCC("tempo-nudge-enabled") { $0.tempoNudgeEnabled = value } }
+    ) }
+
+    private var tempoNudgeCC: Binding<Int> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeCC },
+        set: { value in model.updateLiveCC("tempo-nudge-cc") { $0.tempoNudgeCC = min(max(value, 0), 127) } }
+    ) }
+
+    private var tempoNudgeRange: Binding<Double> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeRangeBPM },
+        set: { value in model.updateLiveCC("tempo-nudge-range") { $0.tempoNudgeRangeBPM = min(max(value, 0.1), 120) } }
     ) }
 
     private var swingCC: Binding<Int> { Binding(
@@ -1724,9 +2356,9 @@ private struct AddPadPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("ADD PAD")
-                .font(RTType.display(13, .heavy))
+                .font(RTType.display(13, .regular))
             Text("Strike a MIDI pad or key, then add the captured note.")
-                .font(.caption)
+                .font(RTType.body(11))
                 .foregroundStyle(theme.muted)
             HStack(spacing: 8) {
                 Image(systemName: learned ? "checkmark.circle.fill" : "waveform.badge.mic")
@@ -1734,18 +2366,18 @@ private struct AddPadPopover: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(learned ? "MIDI NOTE \(note) CAPTURED" : "WAITING FOR MIDI…")
                         .font(RTType.label(10))
-                    if learned { Text(GMDrumMap.name(for: note)).font(.caption).foregroundStyle(theme.muted) }
+                    if learned { Text(GMDrumMap.name(for: note)).font(RTType.body(11)).foregroundStyle(theme.muted) }
                 }
             }
             .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(learned ? theme.note : theme.line))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(learned ? theme.note : theme.line))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
             Stepper(value: $note, in: 0...127) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("MANUAL FALLBACK").font(.caption2.weight(.bold)).foregroundStyle(theme.muted)
-                    Text("\(GMDrumMap.name(for: note)) · MIDI \(note)").font(.caption.monospacedDigit())
+                    Text("MANUAL FALLBACK").font(RTType.body(10)).foregroundStyle(theme.muted)
+                    Text("\(GMDrumMap.name(for: note)) · MIDI \(note)").font(RTType.body(11)).monospacedDigit()
                 }
             }
             Button("ADD & EDIT") {
@@ -1771,13 +2403,6 @@ private struct MetalBackdrop: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [theme.windowTop, theme.windowBottom], startPoint: .top, endPoint: .bottom)
-            Canvas { context, size in
-                for y in stride(from: 0.0, through: size.height, by: 5.0) {
-                    let path = Path(CGRect(x: 0, y: y, width: size.width, height: 0.5))
-                    context.fill(path, with: .color(Color.white.opacity(theme.isLight ? 0.025 : 0.012)))
-                }
-            }
-            .allowsHitTesting(false)
         }
     }
 }
@@ -1793,18 +2418,10 @@ private struct CompactMetalButtonStyle: ButtonStyle {
             .font(RTType.label(9))
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .foregroundStyle(selected ? (theme.isLight ? Color.black : Color.white) : theme.text)
-            .background(
-                LinearGradient(
-                    colors: selected || emphasized
-                        ? [(tint ?? theme.note).opacity(configuration.isPressed ? 0.38 : 0.27), theme.raised]
-                        : [theme.raised, theme.panel],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(selected ? (tint ?? theme.note) : theme.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .opacity(configuration.isPressed ? 0.78 : 1)
+            .foregroundStyle(selected ? Color.white : theme.text)
+            .background(selected ? (tint ?? theme.note).opacity(configuration.isPressed ? 0.72 : 0.92)
+                                 : theme.raised.opacity(configuration.isPressed ? 0.72 : (emphasized ? 1.0 : 0.86)))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(selected ? (tint ?? theme.note).opacity(0.95) : theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

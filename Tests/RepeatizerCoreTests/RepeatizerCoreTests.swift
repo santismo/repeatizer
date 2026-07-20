@@ -20,6 +20,141 @@ struct RepeatizerCoreTests {
         #expect(notes.map(\.beat) == [0, 0.25, 0.5, 0.75])
     }
 
+    @Test("Generated notes hold for the active repeat division")
+    func repeatGateFollowsDivision() {
+        var engine = RepeatEngine(configuration: .init(pads: [60: .init(division: .eighth)]))
+        let events = engine.process([.init(.noteOn, note: 60, velocity: 100, beat: 0)], from: 0, to: 1)
+        let noteEvents = events.filter { $0.note == 60 }
+
+        #expect(noteEvents.map(\.kind) == [.noteOn, .noteOff, .noteOn, .noteOff, .noteOn])
+        #expect(noteEvents.map(\.beat) == [0, 0.5, 0.5, 1, 1])
+    }
+
+    @Test("Instrument mode arpeggiates held chord notes in ascending order")
+    func instrumentArpeggiatesHeldChord() {
+        let settings = InstrumentPerformanceSettings(
+            playbackMode: .arpeggioUp,
+            style: .straight,
+            octaveRange: 0
+        )
+        var engine = RepeatEngine(configuration: .init(
+            performanceSurface: .instrument,
+            instrumentSettings: settings,
+            masterSettings: .init(division: .eighth)
+        ))
+        let events = engine.process([
+            .init(.noteOn, note: 60, velocity: 100, channel: 0, beat: 0),
+            .init(.noteOn, note: 64, velocity: 100, channel: 0, beat: 0),
+            .init(.noteOn, note: 67, velocity: 100, channel: 0, beat: 0)
+        ], from: 0, to: 1.1)
+
+        #expect(events.filter { $0.kind == .noteOn }.map(\.note) == [60, 64, 67])
+        #expect(events.filter { $0.kind == .noteOn }.map(\.beat) == [0, 0.5, 1])
+    }
+
+    @Test("Arpeggiators bypass chord rhythm masks and can spread downward")
+    func arpeggiatorsBypassChordPatternsAndUseDownOctaves() {
+        let settings = InstrumentPerformanceSettings(
+            playbackMode: .arpeggioUp,
+            style: .house,
+            patternVariant: 3,
+            octaveRange: -1
+        )
+        var engine = RepeatEngine(configuration: .init(
+            performanceSurface: .instrument,
+            instrumentSettings: settings,
+            masterSettings: .init(division: .eighth)
+        ))
+        let events = engine.process([.init(.noteOn, note: 60, velocity: 100, beat: 0)], from: 0, to: 1.1)
+        #expect(events.filter { $0.kind == .noteOn }.map(\.note) == [48, 60, 48])
+    }
+
+    @Test("Random arpeggiator shuffles a complete voice pass before repeating")
+    func randomArpeggiatorMakesCompletePass() {
+        let settings = InstrumentPerformanceSettings(playbackMode: .arpeggioRandom, style: .ballad, seed: 73)
+        var engine = RepeatEngine(configuration: .init(
+            performanceSurface: .instrument,
+            instrumentSettings: settings,
+            masterSettings: .init(division: .eighth)
+        ))
+        let events = engine.process([
+            .init(.noteOn, note: 60, velocity: 100, beat: 0),
+            .init(.noteOn, note: 64, velocity: 100, beat: 0),
+            .init(.noteOn, note: 67, velocity: 100, beat: 0)
+        ], from: 0, to: 1.1)
+        let notes = events.filter { $0.kind == .noteOn }.map(\.note)
+        #expect(Set(notes) == Set([60, 64, 67]))
+        #expect(notes.count == 3)
+    }
+
+    @Test("Instrument chord mode emits every held note together")
+    func instrumentRepeatsHeldChord() {
+        var engine = RepeatEngine(configuration: .init(
+            performanceSurface: .instrument,
+            masterSettings: .init(division: .quarter)
+        ))
+        let events = engine.process([
+            .init(.noteOn, note: 60, velocity: 100, channel: 0, beat: 0),
+            .init(.noteOn, note: 64, velocity: 100, channel: 0, beat: 0),
+            .init(.noteOn, note: 67, velocity: 100, channel: 0, beat: 0)
+        ], from: 0, to: 0)
+
+        #expect(events.filter { $0.kind == .noteOn }.map(\.note) == [60, 64, 67])
+    }
+
+    @Test("Instrument genre patterns expose distinct rhythm variations")
+    func instrumentPatternVariantsDiffer() {
+        func noteBeats(patternVariant: Int) -> [Double] {
+            let instrument = InstrumentPerformanceSettings(style: .house, patternVariant: patternVariant)
+            var engine = RepeatEngine(configuration: .init(
+                performanceSurface: .instrument,
+                instrumentSettings: instrument,
+                masterSettings: .init(division: .eighth)
+            ))
+            return engine.process([.init(.noteOn, note: 60, velocity: 100, channel: 0, beat: 0)], from: 0, to: 4.1)
+                .filter { $0.kind == .noteOn }
+                .map(\.beat)
+        }
+
+        #expect(noteBeats(patternVariant: 0) == [0, 2, 4])
+        #expect(noteBeats(patternVariant: 1) == [1, 3])
+    }
+
+    @Test("Live chord patterns move to related rhythms after each phrase")
+    func liveChordPatternsMove() {
+        func beats(live: Bool) -> [Double] {
+            let instrument = InstrumentPerformanceSettings(
+                style: .house,
+                patternVariant: 0,
+                livePatternEnabled: live,
+                livePatternPhraseLength: 1,
+                seed: 19
+            )
+            var engine = RepeatEngine(configuration: .init(
+                performanceSurface: .instrument,
+                instrumentSettings: instrument,
+                masterSettings: .init(division: .sixteenth)
+            ))
+            return engine.process([.init(.noteOn, note: 60, velocity: 100, beat: 0)], from: 0, to: 8.1)
+                .filter { $0.kind == .noteOn }
+                .map(\.beat)
+        }
+
+        #expect(beats(live: true) != beats(live: false))
+    }
+
+    @Test("A released repeat cannot leave an old gate that cuts off a retrigger")
+    func releaseClearsScheduledGate() {
+        var engine = RepeatEngine(configuration: .init(pads: [60: .init(division: .half)]))
+        let events = engine.process([
+            .init(.noteOn, note: 60, velocity: 100, beat: 0),
+            .init(.noteOff, note: 60, beat: 0.2),
+            .init(.noteOn, note: 60, velocity: 100, beat: 0.3)
+        ], from: 0, to: 2.2)
+
+        #expect(!events.contains { $0.kind == .noteOff && abs($0.beat - 2) < 0.000_001 })
+    }
+
     @Test("The global time scale switches every repeat lane between half, normal, and double time")
     func globalTimeScale() {
         let pad = PadConfiguration(division: .sixteenth)
@@ -421,6 +556,8 @@ struct RepeatizerCoreTests {
     func legacyGlobalConfigurationDefaults() throws {
         let json = #"{"tempoMode":"Sync","manualBPM":120,"pads":{},"visibleNotes":[],"followerNotes":[],"liveCC":{"divisionBoostEnabled":false,"divisionBoostCC":64,"divisionBoostSteps":1,"divisionBoostPath":"Same Feel","divisionBoostThreshold":64,"mappings":[]}}"#
         let configuration = try JSONDecoder().decode(RepeatizerConfiguration.self, from: Data(json.utf8))
+        #expect(configuration.performanceSurface == .drums)
+        #expect(configuration.instrumentSettings == .init())
         #expect(configuration.settingsMode == .individual)
         #expect(configuration.captureShortTaps)
         #expect(!configuration.tapLive)
