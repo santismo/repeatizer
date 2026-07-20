@@ -592,6 +592,13 @@ struct RepeatizerCoreTests {
         }
     }
 
+    @Test("On-demand pattern lookup exactly preserves the complete legacy catalog")
+    func onDemandPatternsMatchCompleteCatalog() {
+        for expected in DrumPatternLibrary.all {
+            #expect(DrumPatternLibrary.pattern(expected.id) == expected)
+        }
+    }
+
     @Test("Legacy pads remain in repeat mode with safe pattern defaults")
     func legacyPadPatternDefaults() throws {
         let json = #"{"division":5,"swingPercent":50,"velocityMode":"Received","fixedVelocity":100,"humanizeAmount":10,"divisionModulator":{"mode":"Off","rate":0.5,"depth":1,"direction":"Both"},"swingModulator":{"mode":"Off","rate":0.5,"depth":1,"direction":"Both"},"velocityModulator":{"mode":"Off","rate":0.5,"depth":1,"direction":"Both"}}"#

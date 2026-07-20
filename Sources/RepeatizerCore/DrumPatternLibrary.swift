@@ -127,20 +127,54 @@ public struct DrumPatternDefinition: Identifiable, Hashable, Sendable {
 
 public enum DrumPatternLibrary {
     public static let variantCount = 32
+    // Eleven generated definitions collide with an earlier rhythmic signature.
+    // The legacy complete-catalog builder resolved those collisions by toggling
+    // deterministic detail beats. Keep the resolved masks here so direct lookup
+    // is byte-for-byte identical without constructing all 9,216 patterns first.
+    private static let collisionDetailOverrides: [Int: UInt64] = [
+        1352: 8,
+        5192: 8,
+        5448: 72,
+        5704: 8,
+        6472: 74,
+        6473: 4096,
+        7240: 8,
+        7753: 4096,
+        7880: 8,
+        8520: 8,
+        8777: 4096
+    ]
+    /// The complete catalogue is intentionally lazy. The plug-in's normal startup
+    /// path only asks for the 128 patterns assigned to its pads, so constructing
+    /// and de-duplicating every style/role combination here made the AU display a
+    /// black window while more than 9,000 unused patterns were generated.
     public static let all: [DrumPatternDefinition] = buildLibrary()
 
-    private static let byID: [Int: DrumPatternDefinition] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    private struct CatalogKey: Hashable { let role: DrumPatternRole; let style: DrumPatternStyle }
-    private static let byRole = Dictionary(grouping: all, by: \.role)
-    private static let byRoleAndStyle = Dictionary(grouping: all) { CatalogKey(role: $0.role, style: $0.style) }
-
     public static func pattern(_ id: Int) -> DrumPatternDefinition {
-        byID[id] ?? all[0]
+        guard let indices = decodedIndices(for: id) else {
+            return makeDefinition(styleIndex: 0, roleIndex: 0, variantIndex: 0)
+        }
+        return makeDefinition(
+            styleIndex: indices.style,
+            roleIndex: indices.role,
+            variantIndex: indices.variant
+        )
     }
 
     public static func patterns(for role: DrumPatternRole, style: DrumPatternStyle? = nil) -> [DrumPatternDefinition] {
-        guard let style else { return byRole[role] ?? [] }
-        return byRoleAndStyle[CatalogKey(role: role, style: style)] ?? []
+        let roleIndex = DrumPatternRole.allCases.firstIndex(of: role) ?? 0
+        let styleIndices: [Int]
+        if let style {
+            styleIndices = [DrumPatternStyle.allCases.firstIndex(of: style) ?? 0]
+        } else {
+            styleIndices = Array(DrumPatternStyle.allCases.indices)
+        }
+
+        return styleIndices.flatMap { styleIndex in
+            variantSpecs.indices.map { variantIndex in
+                makeDefinition(styleIndex: styleIndex, roleIndex: roleIndex, variantIndex: variantIndex)
+            }
+        }
     }
 
     public static func patternID(style: DrumPatternStyle, role: DrumPatternRole, variant: Int) -> Int {
@@ -247,32 +281,83 @@ public enum DrumPatternLibrary {
         .init(steps: 60, division: .thirtySecondTriplet, title: "Five-Beat Triplet Cycle")
     ]
 
+    private static func decodedIndices(for id: Int) -> (style: Int, role: Int, variant: Int)? {
+        guard id >= 0 else { return nil }
+        let perStyle = DrumPatternRole.allCases.count * variantCount
+        let styleIndex = id / perStyle
+        let withinStyle = id % perStyle
+        let roleIndex = withinStyle / variantCount
+        let variantIndex = withinStyle % variantCount
+        guard DrumPatternStyle.allCases.indices.contains(styleIndex),
+              DrumPatternRole.allCases.indices.contains(roleIndex),
+              variantSpecs.indices.contains(variantIndex) else { return nil }
+        return (styleIndex, roleIndex, variantIndex)
+    }
+
+    private static func makeDefinition(
+        styleIndex: Int,
+        roleIndex: Int,
+        variantIndex: Int
+    ) -> DrumPatternDefinition {
+        let style = DrumPatternStyle.allCases[styleIndex]
+        let role = DrumPatternRole.allCases[roleIndex]
+        let spec = variantSpecs[variantIndex]
+        let id = styleIndex * DrumPatternRole.allCases.count * variantCount
+            + roleIndex * variantCount + variantIndex
+        var generator = SplitMix64(seed: UInt64(id + 1) &* 0x9E3779B97F4A7C15)
+        var masks = makeMasks(
+            style: style,
+            styleIndex: styleIndex,
+            role: role,
+            roleIndex: roleIndex,
+            variantIndex: variantIndex,
+            steps: spec.steps,
+            stepBeats: spec.division.beats,
+            generator: &generator
+        )
+        if let correctedDetail = collisionDetailOverrides[id] {
+            masks.detail = correctedDetail
+        }
+
+        return DrumPatternDefinition(
+            id: id,
+            name: "\(role.shortName) · \(spec.title) \(styleIndex + 1)-\(variantIndex + 1)",
+            style: style,
+            role: role,
+            stepDivision: spec.division,
+            lengthSteps: spec.steps,
+            coreMask: masks.core,
+            detailMask: masks.detail,
+            variationMask: masks.variation,
+            fillMask: masks.fill
+        )
+    }
+
     private static func buildLibrary() -> [DrumPatternDefinition] {
         var result: [DrumPatternDefinition] = []
         result.reserveCapacity(DrumPatternStyle.allCases.count * DrumPatternRole.allCases.count * variantCount)
         var signatures = Set<String>()
 
-        for (styleIndex, style) in DrumPatternStyle.allCases.enumerated() {
-            for (roleIndex, role) in DrumPatternRole.allCases.enumerated() {
-                for (variantIndex, spec) in variantSpecs.enumerated() {
-                    let id = styleIndex * DrumPatternRole.allCases.count * variantCount
-                        + roleIndex * variantCount + variantIndex
-                    var generator = SplitMix64(seed: UInt64(id + 1) &* 0x9E3779B97F4A7C15)
-                    var masks = makeMasks(
-                        style: style,
+        for styleIndex in DrumPatternStyle.allCases.indices {
+            for roleIndex in DrumPatternRole.allCases.indices {
+                for variantIndex in variantSpecs.indices {
+                    let base = makeDefinition(
                         styleIndex: styleIndex,
-                        role: role,
                         roleIndex: roleIndex,
-                        variantIndex: variantIndex,
-                        steps: spec.steps,
-                        stepBeats: spec.division.beats,
-                        generator: &generator
+                        variantIndex: variantIndex
+                    )
+                    let spec = variantSpecs[variantIndex]
+                    var masks = (
+                        core: base.coreMask,
+                        detail: base.detailMask,
+                        variation: base.variationMask,
+                        fill: base.fillMask
                     )
 
                     var signature = signatureFor(spec: spec, masks: masks)
                     var collisionPass = 0
                     while signatures.contains(signature) {
-                        let bit = (id &* 17 &+ collisionPass &* 11 &+ 3) % spec.steps
+                        let bit = (base.id &* 17 &+ collisionPass &* 11 &+ 3) % spec.steps
                         masks.detail ^= UInt64(1) << UInt64(bit)
                         if masks.core | masks.detail == 0 { masks.core = 1 }
                         collisionPass += 1
@@ -281,10 +366,10 @@ public enum DrumPatternLibrary {
                     signatures.insert(signature)
 
                     result.append(DrumPatternDefinition(
-                        id: id,
-                        name: "\(role.shortName) · \(spec.title) \(styleIndex + 1)-\(variantIndex + 1)",
-                        style: style,
-                        role: role,
+                        id: base.id,
+                        name: base.name,
+                        style: base.style,
+                        role: base.role,
                         stepDivision: spec.division,
                         lengthSteps: spec.steps,
                         coreMask: masks.core,
