@@ -99,6 +99,7 @@ public:
         mUsingHostClock = false;
         mRenderContextValid = false;
         mLastClockValid = false;
+        mLastHostClockValid = false;
         mHasSynchronizedClock.store(false, std::memory_order_relaxed);
         mClockResetRequested.store(true, std::memory_order_relaxed);
     }
@@ -146,6 +147,57 @@ public:
         }
     }
 
+    /// Direct Audio Unit components already receive a resolved host position
+    /// from their processor. This keeps the optional AUv2 shell on the exact
+    /// same engine and clock path as the full AUv3 implementation.
+    void setDirectRenderContext(AUEventSampleTime sample, double bpm, double beat, bool valid) {
+        mRenderContextValid = valid && mHostSync.load(std::memory_order_relaxed)
+            && std::isfinite(bpm) && bpm > 0 && std::isfinite(beat);
+        mRenderStartSample = sample;
+        if (!mRenderContextValid) { return; }
+        mRenderBPM = bpm;
+        mRenderStartBeat = beat;
+        mSynchronizedBPM.store(float(bpm), std::memory_order_relaxed);
+        mHasSynchronizedClock.store(true, std::memory_order_relaxed);
+        const double samplesFromOrigin = beat * mSampleRate * 60.0 / bpm;
+        mManualOriginSample.store(sample - AUEventSampleTime(std::llround(samplesFromOrigin)),
+                                  std::memory_order_relaxed);
+        mFallbackOriginValid.store(true, std::memory_order_relaxed);
+    }
+
+    void handleDirectMIDI(AUEventSampleTime now, int statusByte, int data1, int data2) {
+        const int status = statusByte & 0xF0;
+        const int channel = statusByte & 0x0F;
+        const int note = std::clamp(data1, 0, 127);
+        const int value = std::clamp(data2, 0, 127);
+        if (status == 0xB0) {
+            mCCValues[note].store(value, std::memory_order_relaxed);
+            if (mTempoNudgeEnabled.load(std::memory_order_relaxed)
+                && note == mTempoNudgeCC.load(std::memory_order_relaxed)) {
+                mClockResetRequested.store(true, std::memory_order_relaxed);
+            }
+            if (note == 120 || note == 123) { allNotesOff(now); return; }
+            regridMomentaryRepeats(now, note);
+        } else if (status == 0x90 && value > 0) {
+            beginHeld(now, note, channel, value);
+        } else if (status == 0x80 || (status == 0x90 && value == 0)) {
+            endHeld(now, note, channel);
+        }
+    }
+
+    void allNotesOff(AUEventSampleTime now) {
+        for (int note = 0; note < kNoteCount; ++note) {
+            auto& held = mHeld[note];
+            if (held.isHeld || held.liveTapPending) {
+                sendNoteOff(now, note, held.channel);
+            }
+            held = {};
+            mNoteDown[note].store(false, std::memory_order_relaxed);
+        }
+        mPendingOffCount = 0;
+        mQueuedCount = 0;
+    }
+
     void setParameter(AUParameterAddress address, AUValue value) {
         switch (address) {
         case RepeatizerParameterAddressTempoMode: setTempoMode(value >= 0.5); break;
@@ -173,6 +225,17 @@ public:
         if (std::abs(mManualBPM.exchange(value) - value) > 0.0001f) {
             mClockResetRequested.store(true, std::memory_order_relaxed);
         }
+    }
+
+    void configureTempoNudge(bool enabled, int cc, double rangeBPM) {
+        const int nextCC = std::clamp(cc, 0, 127);
+        const bool wasEnabled = mTempoNudgeEnabled.exchange(enabled, std::memory_order_relaxed);
+        const int previousCC = mTempoNudgeCC.exchange(nextCC, std::memory_order_relaxed);
+        if ((enabled && !wasEnabled) || nextCC != previousCC) {
+            mCCValues[nextCC].store(64, std::memory_order_relaxed);
+        }
+        mTempoNudgeRangeTenths.store(int(std::round(std::clamp(rangeBPM, 0.1, 120.0) * 10.0)), std::memory_order_relaxed);
+        mClockResetRequested.store(true, std::memory_order_relaxed);
     }
 
     void setTimeScale(double multiplier) {
@@ -488,30 +551,65 @@ private:
             ? double(mSynchronizedBPM.load(std::memory_order_relaxed))
             : double(mManualBPM.load());
         double beat = 0;
+        double rawHostBeat = 0;
         bool usingHostClock = false;
         if (hostSync && mRenderContextValid) {
             bpm = mRenderBPM;
-            const double beatsPerFrame = (bpm / 60.0) / mSampleRate;
-            beat = mRenderStartBeat + double(sample - mRenderStartSample) * beatsPerFrame;
+            const double hostBeatsPerFrame = (bpm / 60.0) / mSampleRate;
+            rawHostBeat = mRenderStartBeat + double(sample - mRenderStartSample) * hostBeatsPerFrame;
             usingHostClock = true;
         }
-        if (!usingHostClock) {
-            auto origin = mManualOriginSample.load();
-            if (resetRequested || !mFallbackOriginValid.load(std::memory_order_relaxed)) {
-                const double anchorBeat = mLastClockValid ? mLastClockBeat : 0.0;
-                const auto samplesFromAnchor = AUEventSampleTime(std::llround(anchorBeat * mSampleRate * 60.0 / bpm));
-                mManualOriginSample.store(sample - samplesFromAnchor);
-                mFallbackOriginValid.store(true, std::memory_order_relaxed);
-                origin = sample - samplesFromAnchor;
-            }
-            beat = (double(sample - origin) / mSampleRate) * bpm / 60.0;
+        if (mTempoNudgeEnabled.load(std::memory_order_relaxed)) {
+            const int value = mCCValues[mTempoNudgeCC.load(std::memory_order_relaxed)].load(std::memory_order_relaxed);
+            // MIDI center is 64. Use asymmetric denominators so both endpoints
+            // reach the configured range while 64 remains exactly neutral.
+            const double bipolar = value >= 64 ? double(value - 64) / 63.0 : double(value - 64) / 64.0;
+            bpm = std::clamp(bpm + bipolar * double(mTempoNudgeRangeTenths.load(std::memory_order_relaxed)) / 10.0, 20.0, 400.0);
         }
-        bool sourceChanged = resetRequested;
+
+        const double projectedBeat = mLastClockValid
+            ? mLastClockBeat + double(sample - mLastClockSample) * (mLastClockBPM / 60.0) / mSampleRate
+            : 0.0;
+        bool hostDiscontinuity = false;
+        if (usingHostClock) {
+            hostDiscontinuity = !mLastHostClockValid;
+            if (mLastHostClockValid) {
+                const double expectedHostBeat = mLastHostClockBeat
+                    + double(sample - mLastHostClockSample) * (mLastHostClockBPM / 60.0) / mSampleRate;
+                hostDiscontinuity = std::abs(rawHostBeat - expectedHostBeat) > 0.02;
+            }
+
+            // Host tempo remains the base rate, but the nudge runs on a
+            // continuous private phase. A fixed (non-spring) CC therefore
+            // holds its offset, while returning to 64 resumes the base rate
+            // without snapping away the timing accumulated by the nudge.
+            beat = mLastClockValid && mUsingHostClock && !hostDiscontinuity
+                ? projectedBeat
+                : rawHostBeat;
+            mLastHostClockValid = true;
+            mLastHostClockSample = sample;
+            mLastHostClockBeat = rawHostBeat;
+            mLastHostClockBPM = mRenderBPM;
+        } else {
+            mLastHostClockValid = false;
+            if (mLastClockValid) {
+                beat = projectedBeat;
+            } else {
+                auto origin = mManualOriginSample.load();
+                if (!mFallbackOriginValid.load(std::memory_order_relaxed)) {
+                    const double anchorBeat = 0.0;
+                    const auto samplesFromAnchor = AUEventSampleTime(std::llround(anchorBeat * mSampleRate * 60.0 / bpm));
+                    mManualOriginSample.store(sample - samplesFromAnchor);
+                    mFallbackOriginValid.store(true, std::memory_order_relaxed);
+                    origin = sample - samplesFromAnchor;
+                }
+                beat = (double(sample - origin) / mSampleRate) * bpm / 60.0;
+            }
+        }
+        bool sourceChanged = resetRequested || hostDiscontinuity;
         if (mLastClockValid) {
-            const double expectedBeat = mLastClockBeat
-                + double(sample - mLastClockSample) * (mLastClockBPM / 60.0) / mSampleRate;
             sourceChanged = sourceChanged
-                || std::abs(beat - expectedBeat) > 0.01
+                || std::abs(beat - projectedBeat) > 0.01
                 || std::abs(bpm - mLastClockBPM) > 0.001;
         }
         mHasClockSource = true;
@@ -1313,6 +1411,10 @@ private:
                             ? int(data & 0x7F)
                             : int((uint64_t(packet->words[word + 1]) * 127ULL + 0x7FFFFFFFULL) / 0xFFFFFFFFULL);
                         mCCValues[note].store(std::clamp(value, 0, 127), std::memory_order_relaxed);
+                        if (mTempoNudgeEnabled.load(std::memory_order_relaxed)
+                            && note == mTempoNudgeCC.load(std::memory_order_relaxed)) {
+                            mClockResetRequested.store(true, std::memory_order_relaxed);
+                        }
                         regridMomentaryRepeats(now, note);
                     } else if (isNoteOn && velocity > 0) { beginHeld(now, note, channel, velocity); }
                     else if (isNoteOff || (isNoteOn && velocity == 0)) { endHeld(now, note, channel); }
@@ -1417,9 +1519,13 @@ private:
     bool mUsingHostClock = false;
     bool mRenderContextValid = false;
     bool mLastClockValid = false;
+    bool mLastHostClockValid = false;
     AUEventSampleTime mLastClockSample = 0;
     double mLastClockBeat = 0;
     double mLastClockBPM = 120;
+    AUEventSampleTime mLastHostClockSample = 0;
+    double mLastHostClockBeat = 0;
+    double mLastHostClockBPM = 120;
     AUEventSampleTime mRenderStartSample = 0;
     double mRenderStartBeat = 0;
     double mRenderBPM = 120;
@@ -1431,6 +1537,9 @@ private:
     std::atomic<bool> mHasSynchronizedClock { false };
     std::atomic<bool> mClockResetRequested { true };
     std::atomic<int> mTimeScaleThousandths { 1000 };
+    std::atomic<bool> mTempoNudgeEnabled { false };
+    std::atomic<int> mTempoNudgeCC { 1 };
+    std::atomic<int> mTempoNudgeRangeTenths { 120 };
     std::atomic<bool> mTimeScaleChanged { false };
     std::atomic<AUEventSampleTime> mManualOriginSample { -1 };
     std::atomic<bool> mFallbackOriginValid { false };

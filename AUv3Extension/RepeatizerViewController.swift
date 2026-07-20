@@ -16,14 +16,26 @@ public final class RepeatizerViewController: AUViewController, AUAudioUnitFactor
     }
 
     nonisolated public func createAudioUnit(with componentDescription: AudioComponentDescription) throws -> AUAudioUnit {
-        try DispatchQueue.main.sync {
-            let unit = try RepeatizerAudioUnit(componentDescription: componentDescription, options: [])
-            self.audioUnit = unit
-            if self.isViewLoaded {
-                self.installView(for: unit)
+        // AU hosts are allowed to invoke the factory on the main thread. A
+        // blind DispatchQueue.main.sync in that case deadlocks the extension
+        // until the host's component-open timeout expires.
+        if Thread.isMainThread {
+            return try MainActor.assumeIsolated {
+                try makeAudioUnit(with: componentDescription)
             }
-            return unit
         }
+        return try DispatchQueue.main.sync {
+            try makeAudioUnit(with: componentDescription)
+        }
+    }
+
+    private func makeAudioUnit(with componentDescription: AudioComponentDescription) throws -> RepeatizerAudioUnit {
+        let unit = try RepeatizerAudioUnit(componentDescription: componentDescription, options: [])
+        audioUnit = unit
+        if isViewLoaded {
+            installView(for: unit)
+        }
+        return unit
     }
 
     private func installView(for audioUnit: RepeatizerAudioUnit) {

@@ -89,6 +89,11 @@ public final class RepeatizerAudioUnit: AUAudioUnit, @unchecked Sendable {
         stateLock.unlock()
         kernel.setHostSync(configuration.tempoMode == .hostSync)
         kernel.setManualBPM(configuration.manualBPM)
+        kernel.configureTempoNudgeEnabled(
+            configuration.liveCC.tempoNudgeEnabled,
+            cc: configuration.liveCC.tempoNudgeCC,
+            rangeBPM: configuration.liveCC.tempoNudgeRangeBPM
+        )
         kernel.setTimeScale(configuration.timeScale.intervalMultiplier)
         kernel.setTimingHumanizeEnabled(
             configuration.timingHumanizeEnabled,

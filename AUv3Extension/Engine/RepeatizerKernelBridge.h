@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (AUInternalRenderBlock)internalRenderBlock;
 - (void)setHostSync:(BOOL)hostSync;
 - (void)setManualBPM:(double)bpm;
+- (void)configureTempoNudgeEnabled:(BOOL)enabled cc:(NSInteger)cc rangeBPM:(double)rangeBPM;
 - (void)setTimeScale:(double)multiplier;
 - (void)configurePad:(NSInteger)note
              division:(NSInteger)division

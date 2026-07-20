@@ -5,13 +5,14 @@ private final class RepeatizerPluginModel: ObservableObject {
     let audioUnit: RepeatizerAudioUnit
     @Published var configuration: RepeatizerConfiguration
     @Published var selectedNote: Int?
-    @Published var theme = PluginTheme.dark
+    @Published var theme = PluginTheme.logic
     @Published var presetID = RepeatizerPresets.gmStandard.id
     @Published var randomGenre: DrumPatternStyle = .foundation
     @Published var randomMode: AllPadRandomMode = .selectedGenre
     @Published var heldNotes: Set<Int> = []
     @Published var liveNote: Int?
     @Published var capturedInputNote: Int?
+    @Published private(set) var effectiveBPM = 120.0
     @Published var settingsVisible = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
@@ -541,7 +542,7 @@ private final class RepeatizerPluginModel: ObservableObject {
             configuration = RepeatizerPresets.gmStandard.configuration
             configuration.liveCC = retainedMappings
         }
-        theme = .dark
+        theme = .logic
         presetID = RepeatizerPresets.gmStandard.id
         randomGenre = .foundation
         randomMode = .selectedGenre
@@ -569,6 +570,11 @@ private final class RepeatizerPluginModel: ObservableObject {
 
     func pollInput() {
         refreshConfigurationRestoredByHost()
+
+        let nextBPM = audioUnit.currentBPM()
+        if nextBPM.isFinite, abs(nextBPM - effectiveBPM) >= 0.01 {
+            effectiveBPM = nextBPM
+        }
 
         let monitoredNotes = configuration.performanceSurface == .instrument
             ? Array(0...127)
@@ -670,71 +676,33 @@ private enum AllPadRandomMode: String, CaseIterable, Identifiable {
 }
 
 private enum PluginTheme: String, CaseIterable, Identifiable {
-    case dark = "Dark"
-    case graphite = "Graphite"
-    case studio = "Studio"
-    case console = "Console"
+    case logic = "Logic"
 
     var id: String { rawValue }
-    var isLight: Bool { self == .studio }
-    var windowTop: Color {
-        switch self {
-        case .dark: Color(red: 0.035, green: 0.035, blue: 0.038)
-        case .graphite: Color(red: 0.106, green: 0.125, blue: 0.145)
-        case .studio: Color(red: 0.80, green: 0.82, blue: 0.85)
-        case .console: Color(red: 0.025, green: 0.086, blue: 0.125)
-        }
-    }
-    var windowBottom: Color {
-        switch self {
-        case .dark: Color.black
-        case .graphite: Color(red: 0.043, green: 0.055, blue: 0.066)
-        case .studio: Color(red: 0.64, green: 0.67, blue: 0.71)
-        case .console: Color(red: 0.008, green: 0.028, blue: 0.045)
-        }
-    }
-    var panel: Color {
-        switch self {
-        case .dark: Color(red: 0.075, green: 0.075, blue: 0.08)
-        case .graphite: Color(red: 0.137, green: 0.161, blue: 0.184)
-        case .studio: Color(red: 0.84, green: 0.86, blue: 0.89)
-        case .console: Color(red: 0.043, green: 0.126, blue: 0.17)
-        }
-    }
-    var raised: Color {
-        switch self {
-        case .dark: Color(red: 0.13, green: 0.13, blue: 0.14)
-        case .graphite: Color(red: 0.176, green: 0.204, blue: 0.231)
-        case .studio: Color(red: 0.72, green: 0.75, blue: 0.79)
-        case .console: Color(red: 0.055, green: 0.16, blue: 0.21)
-        }
-    }
-    var board: Color {
-        switch self {
-        case .dark: Color(red: 0.022, green: 0.022, blue: 0.024)
-        case .graphite: Color(red: 0.071, green: 0.086, blue: 0.10)
-        case .studio: Color(red: 0.68, green: 0.71, blue: 0.75)
-        case .console: Color(red: 0.018, green: 0.061, blue: 0.084)
-        }
-    }
-    var line: Color { isLight ? Color.black.opacity(0.24) : Color.white.opacity(0.20) }
-    var text: Color { isLight ? Color(red: 0.08, green: 0.09, blue: 0.105) : Color.white.opacity(0.96) }
-    var muted: Color { isLight ? Color.black.opacity(0.56) : Color.white.opacity(0.56) }
-    var note: Color { self == .dark ? .white : (self == .console ? Color(red: 0.18, green: 0.87, blue: 0.72) : Color(red: 0.29, green: 0.72, blue: 0.64)) }
-    var master: Color { self == .dark ? Color.white.opacity(0.82) : Color(red: 0.94, green: 0.65, blue: 0.24) }
-    var live: Color { self == .dark ? .white : Color(red: 0.28, green: 0.86, blue: 0.56) }
-    var headerColors: [Color] { [panel.opacity(0.76), panel.opacity(0.76)] }
+    var isLight: Bool { false }
+    var windowTop: Color { Color(red: 0.135, green: 0.135, blue: 0.135) }
+    var windowBottom: Color { Color(red: 0.095, green: 0.095, blue: 0.095) }
+    var panel: Color { Color(red: 0.155, green: 0.155, blue: 0.155) }
+    var raised: Color { Color(red: 0.255, green: 0.255, blue: 0.255) }
+    var board: Color { Color(red: 0.105, green: 0.105, blue: 0.105) }
+    var line: Color { Color.white.opacity(0.14) }
+    var text: Color { Color.white.opacity(0.91) }
+    var muted: Color { Color.white.opacity(0.58) }
+    var note: Color { Color(red: 0.20, green: 0.47, blue: 0.91) }
+    var master: Color { Color(red: 0.96, green: 0.48, blue: 0.10) }
+    var live: Color { Color(red: 0.31, green: 0.69, blue: 0.25) }
+    var headerColors: [Color] { [Color(red: 0.18, green: 0.18, blue: 0.18), panel] }
 }
 
 private enum RTType {
     static func body(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("Avenir Next", fixedSize: size).weight(weight)
+        .system(size: size, weight: weight, design: .default)
     }
-    static func display(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .custom("Avenir Next Condensed", fixedSize: size).weight(weight)
+    static func display(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
     }
-    static func label(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .custom("Avenir Next", fixedSize: size).weight(weight)
+    static func label(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
     }
 }
 
@@ -901,9 +869,8 @@ struct RepeatizerPluginView: View {
 
     private func header(_ theme: PluginTheme) -> some View {
         WrappingRow(horizontalSpacing: 14, verticalSpacing: 8) {
-            Text("REPEATIZER")
-                .font(RTType.display(22, .heavy))
-                .tracking(0.8)
+            Text("Repeatizer")
+                .font(RTType.display(18, .medium))
                 .frame(width: 150, alignment: .leading)
 
             HStack(spacing: 4) {
@@ -942,11 +909,6 @@ struct RepeatizerPluginView: View {
             .frame(width: 160)
             ClockControls(model: model, theme: theme)
 
-            Picker("Theme", selection: $model.theme) {
-                ForEach(PluginTheme.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .labelsHidden()
-            .frame(width: 82)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -1117,8 +1079,8 @@ struct RepeatizerPluginView: View {
                     .buttonStyle(CompactMetalButtonStyle(theme: theme))
                     .padding(8)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 2))
                 .shadow(color: .black.opacity(0.55), radius: 18, y: 8)
                 .padding(.top, 70)
                 .padding(.trailing, 14)
@@ -1139,7 +1101,7 @@ private struct InstrumentBoard: View {
             WrappingRow(horizontalSpacing: 12, verticalSpacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("INSTRUMENT")
-                        .font(RTType.display(15, .heavy))
+                        .font(RTType.display(15))
                 }
 
                 RepeatDivisionSlider(
@@ -1218,8 +1180,8 @@ private struct InstrumentBoard: View {
                     }
                     .padding(12)
                     .background(theme.panel.opacity(0.72))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
 
                     if instrument.playbackMode == .chord {
                         chordPatternControls
@@ -1330,8 +1292,8 @@ private struct InstrumentBoard: View {
         }
         .padding(12)
         .background(theme.panel.opacity(0.72))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private var arpeggiatorControls: some View {
@@ -1373,8 +1335,8 @@ private struct InstrumentBoard: View {
         }
         .padding(12)
         .background(theme.panel.opacity(0.72))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private var instrumentHumanizeControls: some View {
@@ -1447,8 +1409,8 @@ private struct InstrumentBoard: View {
         }
         .padding(12)
         .background(theme.panel.opacity(0.72))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private func instrumentSlider(
@@ -1497,13 +1459,13 @@ private struct IncomingMIDIMonitor: View {
                 .foregroundStyle(theme.muted)
             if detectedNotes.isEmpty {
                 Text("—")
-                    .font(RTType.display(14, .heavy))
+                    .font(RTType.display(14, .regular))
                     .foregroundStyle(theme.muted)
             } else {
                 WrappingRow(horizontalSpacing: 7, verticalSpacing: 7) {
                     ForEach(detectedNotes, id: \.self) { note in
                         Text(instrumentMIDINoteName(note))
-                            .font(RTType.display(12, .heavy))
+                            .font(RTType.display(12, .regular))
                             .foregroundStyle(heldNotes.contains(note) ? theme.live : theme.note)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 6)
@@ -1516,8 +1478,8 @@ private struct IncomingMIDIMonitor: View {
         }
         .padding(12)
         .background(theme.panel.opacity(0.74))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 }
 
@@ -1548,7 +1510,7 @@ private struct RepeatDivisionSlider: View {
             )
             .tint(theme.note)
             Text(value.wrappedValue.title)
-                .font(RTType.display(12, .heavy))
+                .font(RTType.display(12, .regular))
                 .foregroundStyle(theme.note)
                 .frame(width: 32, alignment: .trailing)
         }
@@ -1622,7 +1584,7 @@ private struct PadButton: View {
                         Spacer()
                     }
                     Text(GMDrumMap.name(for: note).uppercased())
-                        .font(RTType.display(11, .heavy))
+                        .font(RTType.display(11, .regular))
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                     Spacer(minLength: 2)
@@ -1638,19 +1600,12 @@ private struct PadButton: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: live ? [theme.live.opacity(0.34), theme.raised] : [theme.raised, theme.panel],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .background(live ? theme.live.opacity(0.24) : (selected ? theme.note.opacity(0.14) : theme.raised))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 2)
                         .stroke(live ? theme.live : (selected ? theme.note : (master ? theme.master.opacity(0.75) : theme.line)), lineWidth: live ? 2.2 : (selected ? 1.7 : 1))
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .shadow(color: live ? theme.live.opacity(0.35) : .black.opacity(theme.isLight ? 0.08 : 0.25), radius: live ? 8 : 2, y: 2)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
                 .scaleEffect(held ? 0.975 : 1)
             }
             .buttonStyle(.plain)
@@ -1684,7 +1639,7 @@ private struct PadSettingsPanel: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.configuration.settingsMode == .master ? "MASTER SETTINGS" : GMDrumMap.name(for: note).uppercased())
-                        .font(RTType.display(17, .heavy))
+                        .font(RTType.display(17, .regular))
                     Text(model.configuration.settingsMode == .master
                          ? "NON-DESTRUCTIVE OVERRIDE · ALL PADS"
                          : "MIDI \(note) · \(model.selectedIsFollower ? "FOLLOWER" : (model.selectedIsMaster ? "MASTER" : "INDEPENDENT"))")
@@ -1725,7 +1680,7 @@ private struct PadSettingsPanel: View {
                     Image(systemName: "link")
                     Text("Following \(GMDrumMap.name(for: master)) exactly. Unfollow to edit this pad independently.")
                 }
-                .font(.caption.weight(.semibold))
+                .font(RTType.body(11))
                 .foregroundStyle(theme.text)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1826,7 +1781,7 @@ private struct PadSettingsPanel: View {
                         set: { value in model.updateSelected { $0.repeatFillBalance = value } }
                     ), range: 0...1, valueText: percent(model.selectedPad.repeatFillBalance), step: 0.01)
                     Text("Creates varied phrase-ending fills. KIT BALANCE favors musically useful drum roles so the entire kit does not accelerate together.")
-                        .font(.caption2)
+                        .font(RTType.body(10))
                         .foregroundStyle(theme.muted)
                 }
             }
@@ -1847,7 +1802,7 @@ private struct PadSettingsPanel: View {
                     ? "AUTO follows the selected pattern's step division."
                     : "AUTO follows the repeat division.")
                  : "Swing is applied only on this independent grid.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
             VStack(spacing: 5) {
                 HStack {
@@ -1916,7 +1871,7 @@ private struct PadSettingsPanel: View {
                             .font(RTType.label(9))
                             .foregroundStyle(theme.note)
                         Text(model.selectedPattern.name)
-                            .font(RTType.body(11, .semibold))
+                            .font(RTType.body(11, .regular))
                             .lineLimit(1)
                     }
                     Spacer()
@@ -1924,8 +1879,8 @@ private struct PadSettingsPanel: View {
                 }
                 .padding(8)
                 .background(theme.raised.opacity(0.8))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.line))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line))
+                .clipShape(RoundedRectangle(cornerRadius: 2))
             }
             .menuStyle(.borderlessButton)
 
@@ -1964,7 +1919,7 @@ private struct PadSettingsPanel: View {
             ), range: 0...1, valueText: percent(model.selectedPad.patternProbability), step: 0.01)
 
             Text("Release stops this lane. Press again and it rejoins the pattern at the current project position.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
         }
     }
@@ -2036,7 +1991,7 @@ private struct PadSettingsPanel: View {
                         set: { model.setTimingHumanizeBias($0) }
                     ), range: -1...1, valueText: timingBiasLabel(model.configuration.timingHumanizeBias), step: 0.01)
                     Text("Timing changes generated repeat and pattern notes only, with range limited to keep notes inside their grid neighborhood.")
-                        .font(.caption2)
+                        .font(RTType.body(10))
                         .foregroundStyle(theme.muted)
                 }
             }
@@ -2114,7 +2069,7 @@ private struct PadSettingsPanel: View {
                     .frame(width: 110)
                 }
                 Text("The live hit uses its own FREE, EVEN, ODD, or BOTH grid. REPEAT WAIT separately decides when the held repeat or pattern resumes.")
-                    .font(.caption2)
+                    .font(RTType.body(10))
                     .foregroundStyle(theme.muted)
             }
         }
@@ -2125,7 +2080,7 @@ private struct PadSettingsPanel: View {
     private func settingsSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: icon)
-                .font(RTType.label(10, .heavy))
+                .font(RTType.label(10, .regular))
                 .tracking(0.8)
                 .foregroundStyle(theme.note)
             content()
@@ -2199,8 +2154,8 @@ private struct PatternPreview: View {
         .frame(height: CGFloat(rows) * 10 + CGFloat(rows - 1) * 2)
         .padding(7)
         .background(theme.board.opacity(0.78))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.line.opacity(0.7)))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(theme.line.opacity(0.7)))
+        .clipShape(RoundedRectangle(cornerRadius: 2))
         .accessibilityLabel("Pattern preview with \(pattern.lengthSteps) steps")
     }
 }
@@ -2216,9 +2171,46 @@ private struct LiveCCPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("MIDI CC")
-                .font(RTType.display(13, .heavy))
+                .font(RTType.display(13, .regular))
             Text("Continuous mappings use the full 0–127 CC range. Division ± controls are momentary: any nonzero value holds the shift and CC 0 releases it.")
-                .font(.caption)
+                .font(RTType.body(11))
+                .foregroundStyle(theme.muted)
+
+            HStack(spacing: 10) {
+                Toggle("TEMPO NUDGE", isOn: tempoNudgeEnabled)
+                    .font(RTType.label(9))
+                Spacer()
+                ccInput(tempoNudgeCC)
+            }
+            .padding(9)
+            .background(theme.board)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(model.configuration.liveCC.tempoNudgeEnabled ? theme.note.opacity(0.65) : theme.line))
+
+            HStack(spacing: 10) {
+                Text("NUDGE RANGE")
+                    .font(RTType.label(9))
+                Slider(value: tempoNudgeRange, in: 0.1...120, step: 0.1)
+                    .tint(theme.note)
+                Text("±\(model.configuration.liveCC.tempoNudgeRangeBPM, specifier: "%.1f") BPM")
+                    .font(RTType.body(10))
+                    .frame(width: 78, alignment: .trailing)
+            }
+            .padding(9)
+            .background(theme.board)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.line))
+
+            HStack {
+                Text("ENGINE TEMPO")
+                    .font(RTType.label(9))
+                Spacer()
+                Text("\(model.effectiveBPM, specifier: "%.1f") BPM")
+                    .font(RTType.body(11))
+                    .foregroundStyle(theme.note)
+            }
+            .padding(.horizontal, 9)
+
+            Text("CC 64 is neutral; 0 and 127 reach the selected negative and positive BPM range around Manual or host/project tempo. A spring controller returns itself to 64, while a regular controller holds the chosen tempo offset until its CC value changes.")
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
 
             let swing = model.configuration.liveCC.mapping(.swing)
@@ -2230,7 +2222,7 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(swing.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(swing.enabled ? theme.note.opacity(0.65) : theme.line))
 
             let divisionSlider = model.configuration.liveCC.mapping(.divisionDepth)
             HStack(spacing: 10) {
@@ -2241,7 +2233,7 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(divisionSlider.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(divisionSlider.enabled ? theme.note.opacity(0.65) : theme.line))
 
             let velocitySlider = model.configuration.liveCC.mapping(.velocity)
             HStack(spacing: 10) {
@@ -2252,14 +2244,14 @@ private struct LiveCCPopover: View {
             }
             .padding(9)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(velocitySlider.enabled ? theme.note.opacity(0.65) : theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(velocitySlider.enabled ? theme.note.opacity(0.65) : theme.line))
 
             Text("The division slider scrolls from the slowest to fastest repeat division. The velocity slider locks generated notes from 1 to 127; velocity humanize still applies afterward.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
 
             Text("MOMENTARY DIVISION ±1")
-                .font(RTType.label(9, .heavy))
+                .font(RTType.label(9, .regular))
                 .foregroundStyle(theme.note)
 
             ForEach(divisionActions, id: \.self) { action in
@@ -2272,11 +2264,11 @@ private struct LiveCCPopover: View {
                 }
                 .padding(9)
                 .background(theme.board)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(mapping.enabled ? theme.note.opacity(0.65) : theme.line))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(mapping.enabled ? theme.note.opacity(0.65) : theme.line))
             }
 
             Text("EVEN selects the next faster or slower straight division. ODD selects the next faster or slower triplet division—even when the pad starts on the other family.")
-                .font(.caption2)
+                .font(RTType.body(10))
                 .foregroundStyle(theme.muted)
         }
         .padding(16)
@@ -2288,6 +2280,21 @@ private struct LiveCCPopover: View {
     private var swingEnabled: Binding<Bool> { Binding(
         get: { model.configuration.liveCC.mapping(.swing).enabled },
         set: { value in model.updateLiveCC("swing-enabled") { $0.updateMapping(.swing) { $0.enabled = value } } }
+    ) }
+
+    private var tempoNudgeEnabled: Binding<Bool> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeEnabled },
+        set: { value in model.updateLiveCC("tempo-nudge-enabled") { $0.tempoNudgeEnabled = value } }
+    ) }
+
+    private var tempoNudgeCC: Binding<Int> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeCC },
+        set: { value in model.updateLiveCC("tempo-nudge-cc") { $0.tempoNudgeCC = min(max(value, 0), 127) } }
+    ) }
+
+    private var tempoNudgeRange: Binding<Double> { Binding(
+        get: { model.configuration.liveCC.tempoNudgeRangeBPM },
+        set: { value in model.updateLiveCC("tempo-nudge-range") { $0.tempoNudgeRangeBPM = min(max(value, 0.1), 120) } }
     ) }
 
     private var swingCC: Binding<Int> { Binding(
@@ -2349,9 +2356,9 @@ private struct AddPadPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("ADD PAD")
-                .font(RTType.display(13, .heavy))
+                .font(RTType.display(13, .regular))
             Text("Strike a MIDI pad or key, then add the captured note.")
-                .font(.caption)
+                .font(RTType.body(11))
                 .foregroundStyle(theme.muted)
             HStack(spacing: 8) {
                 Image(systemName: learned ? "checkmark.circle.fill" : "waveform.badge.mic")
@@ -2359,18 +2366,18 @@ private struct AddPadPopover: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(learned ? "MIDI NOTE \(note) CAPTURED" : "WAITING FOR MIDI…")
                         .font(RTType.label(10))
-                    if learned { Text(GMDrumMap.name(for: note)).font(.caption).foregroundStyle(theme.muted) }
+                    if learned { Text(GMDrumMap.name(for: note)).font(RTType.body(11)).foregroundStyle(theme.muted) }
                 }
             }
             .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.board)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(learned ? theme.note : theme.line))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(learned ? theme.note : theme.line))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
             Stepper(value: $note, in: 0...127) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("MANUAL FALLBACK").font(.caption2.weight(.bold)).foregroundStyle(theme.muted)
-                    Text("\(GMDrumMap.name(for: note)) · MIDI \(note)").font(.caption.monospacedDigit())
+                    Text("MANUAL FALLBACK").font(RTType.body(10)).foregroundStyle(theme.muted)
+                    Text("\(GMDrumMap.name(for: note)) · MIDI \(note)").font(RTType.body(11)).monospacedDigit()
                 }
             }
             Button("ADD & EDIT") {
@@ -2396,13 +2403,6 @@ private struct MetalBackdrop: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [theme.windowTop, theme.windowBottom], startPoint: .top, endPoint: .bottom)
-            Canvas { context, size in
-                for y in stride(from: 0.0, through: size.height, by: 5.0) {
-                    let path = Path(CGRect(x: 0, y: y, width: size.width, height: 0.5))
-                    context.fill(path, with: .color(Color.white.opacity(theme.isLight ? 0.025 : 0.012)))
-                }
-            }
-            .allowsHitTesting(false)
         }
     }
 }
@@ -2418,18 +2418,10 @@ private struct CompactMetalButtonStyle: ButtonStyle {
             .font(RTType.label(9))
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .foregroundStyle(selected ? (theme.isLight ? Color.black : Color.white) : theme.text)
-            .background(
-                LinearGradient(
-                    colors: selected || emphasized
-                        ? [(tint ?? theme.note).opacity(configuration.isPressed ? 0.38 : 0.27), theme.raised]
-                        : [theme.raised, theme.panel],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(selected ? (tint ?? theme.note) : theme.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .opacity(configuration.isPressed ? 0.78 : 1)
+            .foregroundStyle(selected ? Color.white : theme.text)
+            .background(selected ? (tint ?? theme.note).opacity(configuration.isPressed ? 0.72 : 0.92)
+                                 : theme.raised.opacity(configuration.isPressed ? 0.72 : (emphasized ? 1.0 : 0.86)))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(selected ? (tint ?? theme.note).opacity(0.95) : theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

@@ -841,29 +841,44 @@ public struct MomentaryCCMapping: Hashable, Codable, Sendable {
 public struct LiveCCConfiguration: Hashable, Codable, Sendable {
     public var mappings: [CCDestination: CCMapping]
     public var momentaryMappings: [MomentaryCCAction: MomentaryCCMapping]
+    public var tempoNudgeEnabled: Bool
+    public var tempoNudgeCC: Int
+    public var tempoNudgeRangeBPM: Double
 
     public init(
         mappings: [CCDestination: CCMapping] = [:],
-        momentaryMappings: [MomentaryCCAction: MomentaryCCMapping] = [:]
+        momentaryMappings: [MomentaryCCAction: MomentaryCCMapping] = [:],
+        tempoNudgeEnabled: Bool = false,
+        tempoNudgeCC: Int = 1,
+        tempoNudgeRangeBPM: Double = 12
     ) {
         self.mappings = mappings
         self.momentaryMappings = momentaryMappings
+        self.tempoNudgeEnabled = tempoNudgeEnabled
+        self.tempoNudgeCC = min(max(tempoNudgeCC, 0), 127)
+        self.tempoNudgeRangeBPM = min(max(tempoNudgeRangeBPM, 0.1), 120)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case mappings, momentaryMappings
+        case mappings, momentaryMappings, tempoNudgeEnabled, tempoNudgeCC, tempoNudgeRangeBPM
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         mappings = try values.decodeIfPresent([CCDestination: CCMapping].self, forKey: .mappings) ?? [:]
         momentaryMappings = try values.decodeIfPresent([MomentaryCCAction: MomentaryCCMapping].self, forKey: .momentaryMappings) ?? [:]
+        tempoNudgeEnabled = try values.decodeIfPresent(Bool.self, forKey: .tempoNudgeEnabled) ?? false
+        tempoNudgeCC = min(max(try values.decodeIfPresent(Int.self, forKey: .tempoNudgeCC) ?? 1, 0), 127)
+        tempoNudgeRangeBPM = min(max(try values.decodeIfPresent(Double.self, forKey: .tempoNudgeRangeBPM) ?? 12, 0.1), 120)
     }
 
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(mappings, forKey: .mappings)
         try values.encode(momentaryMappings, forKey: .momentaryMappings)
+        try values.encode(tempoNudgeEnabled, forKey: .tempoNudgeEnabled)
+        try values.encode(tempoNudgeCC, forKey: .tempoNudgeCC)
+        try values.encode(tempoNudgeRangeBPM, forKey: .tempoNudgeRangeBPM)
     }
 
     public func mapping(_ destination: CCDestination) -> CCMapping {
@@ -2133,7 +2148,12 @@ public struct RepeatEngine: Sendable {
     }
 
     private func patternRandomUnit(note: Int, globalStep: Int, seed: Int, salt: Int) -> Double {
-        var value = UInt64(bitPattern: Int64(note &* 48_271 &+ globalStep &* 6_969 &+ seed &* 1_013 &+ salt &* 65_537))
+        let noteTerm = note &* 48_271
+        let stepTerm = globalStep &* 6_969
+        let seedTerm = seed &* 1_013
+        let saltTerm = salt &* 65_537
+        let mixed = noteTerm &+ stepTerm &+ seedTerm &+ saltTerm
+        var value = UInt64(bitPattern: Int64(mixed))
         value ^= value >> 12
         value ^= value << 25
         value ^= value >> 27
