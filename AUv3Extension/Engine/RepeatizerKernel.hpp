@@ -376,12 +376,17 @@ public:
         mQueuedCount = 0;
         const Clock clock = makeClock(bufferStart, frameCount);
         const bool timeScaleChanged = mTimeScaleChanged.exchange(false);
+        if (clock.phaseDiscontinuity || timeScaleChanged) {
+            // Pending gates are expressed in the old phase/scale. Release the
+            // notes at the boundary before the held lanes are moved to their
+            // new grid, otherwise an old off can land after a new note-on.
+            queueAllPendingOffsNow(clock);
+        }
         if (clock.sourceChanged || timeScaleChanged) {
             // Logic can expose its musical-context callback before the callback
             // has valid transport data. When the real project clock arrives,
             // move held lanes onto that grid instead of flushing stale fallback
             // beats as a burst at the start of the buffer.
-            mPendingOffCount = 0;
             for (int note = 0; note < kNoteCount; ++note) {
                 auto& held = mHeld[note];
                 if (!held.isHeld) { continue; }
@@ -506,7 +511,15 @@ private:
     struct QueuedEvent { bool on = false; int note = 0; int channel = 0; int velocity = 0; double beat = 0; };
     struct InstrumentSequence { bool active = false; double nextBeat = 0; int step = 0; uint64_t randomEpoch = 0; };
     struct InstrumentVoice { int note = 0; int channel = 0; int velocity = 0; };
-    struct Clock { AUEventSampleTime startSample = 0; double startBeat = 0; double endBeat = 0; double beatsPerFrame = 0; double bpm = 120; bool sourceChanged = false; };
+    struct Clock {
+        AUEventSampleTime startSample = 0;
+        double startBeat = 0;
+        double endBeat = 0;
+        double beatsPerFrame = 0;
+        double bpm = 120;
+        bool sourceChanged = false;
+        bool phaseDiscontinuity = false;
+    };
     struct GridPoint { double beat = 0; bool isSwungSide = false; };
     struct PatternPoint { double beat = 0; int64_t globalStep = 0; bool valid = false; };
     struct ResolvedSettings {
@@ -606,10 +619,11 @@ private:
                 beat = (double(sample - origin) / mSampleRate) * bpm / 60.0;
             }
         }
-        bool sourceChanged = resetRequested || hostDiscontinuity;
+        const bool phaseDiscontinuity = hostDiscontinuity
+            || (mLastClockValid && std::abs(beat - projectedBeat) > 0.01);
+        bool sourceChanged = resetRequested || phaseDiscontinuity;
         if (mLastClockValid) {
             sourceChanged = sourceChanged
-                || std::abs(beat - projectedBeat) > 0.01
                 || std::abs(bpm - mLastClockBPM) > 0.001;
         }
         mHasClockSource = true;
@@ -621,7 +635,15 @@ private:
         const double beatsPerFrame = (bpm / 60.0) / mSampleRate;
         mCurrentBeat.store(beat, std::memory_order_relaxed);
         mCurrentBPM.store(bpm, std::memory_order_relaxed);
-        return Clock { sample, beat, beat + beatsPerFrame * double(frames), beatsPerFrame, bpm, sourceChanged };
+        return Clock {
+            sample,
+            beat,
+            beat + beatsPerFrame * double(frames),
+            beatsPerFrame,
+            bpm,
+            sourceChanged,
+            phaseDiscontinuity
+        };
     }
 
     ResolvedSettings resolve(int note, double beat, int eventIndex, double bpm) const {
@@ -1358,6 +1380,24 @@ private:
             }
         }
         mPendingOffCount = keep;
+    }
+
+    void queueAllPendingOffsNow(const Clock& clock) {
+        for (int i = 0; i < mPendingOffCount; ++i) {
+            const auto off = mPendingOffs[i];
+            bool alreadyQueued = false;
+            for (int earlier = 0; earlier < i; ++earlier) {
+                const auto previous = mPendingOffs[earlier];
+                if (previous.note == off.note && previous.channel == off.channel) {
+                    alreadyQueued = true;
+                    break;
+                }
+            }
+            if (!alreadyQueued) {
+                queueEvent(false, off.note, off.channel, 0, clock.startBeat, clock);
+            }
+        }
+        mPendingOffCount = 0;
     }
 
     void addPendingOff(int note, int channel, double beat) {
